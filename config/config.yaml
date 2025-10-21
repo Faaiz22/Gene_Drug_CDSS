@@ -1,0 +1,45 @@
+paths:
+  data_dir: "data/"
+  cache_dir: "cache/"
+  output_dir: "results/"
+  checkpoint_dir: "checkpoints/"
+  relationships_file: "relationships.tsv"
+
+filter_settings:
+  filter_genes_only: true
+  filter_chemicals_only: true
+
+model:
+  protein_model_name: "facebook/esm2_t12_35M_UR50D"
+  drug_node_dim: 16
+  drug_edge_dim: 8
+  drug_hidden_dim: 128
+  drug_output_dim: 256
+  egnn_num_layers: 4
+  protein_embedding_dim: 480
+  protein_freeze_layers: 6
+  attention_heads: 8
+  attention_dim: 256
+  mlp_hidden_dims: [512, 256, 128]
+  dropout_rate: 0.3
+
+training:
+  device: "cuda" # "cuda" or "cpu"
+  batch_size: 16
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  num_epochs: 30
+  early_stopping_patience: 7
+  gradient_clip: 1.0
+
+data_split:
+  train_size: 0.70
+  test_size: 0.20
+  val_size: 0.10
+
+processing:
+  max_protein_length: 1024
+  use_scaffold_split: true
+  max_conformers: 1
+  conformer_optimize_steps: 200
+  mc_dropout_samples: 20
