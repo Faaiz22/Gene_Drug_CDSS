@@ -17,6 +17,7 @@ seaborn
 tqdm
 deepchem
 captum
+httpx
 PyYAML
 streamlit
 requests
