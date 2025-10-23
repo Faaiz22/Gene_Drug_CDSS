@@ -4,9 +4,7 @@ import time
 from pathlib import Path
 from typing import Optional, Dict
 from rdkit import Chem
-
-
-import streamlit # <-- Import Streamlit
+import streamlit as st # <-- Import Streamlit
 
 class DataEnricher:
     # ... (init method remains the same) ...
