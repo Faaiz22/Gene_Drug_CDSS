@@ -1,25 +1,14 @@
 import streamlit as st
 import torch
-from app.caching_utils import (
-    load_config, load_enricher, 
-    load_sync_resources, featurize_pair
-)
+from app.caching_utils import get_cached_prediction # <-- Import our new function
 
-# --- Load all resources via cache ---
+# --- Page Setup ---
+# All resources are loaded on demand by get_cached_prediction
 try:
-    # Set device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Load config and all resources
-    config = load_config()
-    enricher = load_enricher(config)
-    model, protein_featurizer = load_sync_resources(config, device)
-    
     st.set_page_config(page_title="Single Prediction", page_icon="🎯")
 except Exception as e:
-    st.error(f"Fatal error during resource loading: {e}")
-    st.stop()
-
+    # This might fail if streamlit is already set_page_config'd
+    pass
 
 st.title("🎯 Single Pair Prediction")
 st.markdown("Enter a gene identifier and a chemical identifier to predict their interaction probability.")
@@ -36,37 +25,32 @@ if st.button("Predict Interaction", type="primary"):
         st.warning("Please enter both a gene and a chemical identifier.")
     else:
         try:
-            # 1. Featurize the pair
-            # Streamlit will automatically 'await' this async cached function
+            # 1. Run the cached prediction
+            # Streamlit will 'await' this async function
             # and show a spinner.
-            graph_batch, protein_emb, smiles, gene_seq = featurize_pair(
-                enricher, protein_featurizer, gene_id, chem_id, config, device
-            )
+            result = get_cached_prediction(gene_id, chem_id)
 
-            # 2. Run prediction (Sync)
-            with torch.no_grad():
-                logits, attn_weights = model(graph_batch, protein_emb)
-                probability = torch.sigmoid(logits).item()
-            
             st.success(f"Prediction for **{gene_id}** and **{chem_id}** complete!")
 
             # --- Display Real Results ---
-            prob_percent = probability * 100
-            delta_label = "High Likelihood" if probability > 0.5 else "Low Likelihood"
+            prob_percent = result['probability'] * 100
+            delta_label = "High Likelihood" if result['probability'] > 0.5 else "Low Likelihood"
             
             st.metric(label="Interaction Probability", value=f"{prob_percent:.1f}%", delta=delta_label)
-            st.progress(probability)
+            st.progress(result['probability'])
 
             with st.expander("View Retrieved Data & Features"):
                 st.json({
-                    "gene_id": gene_id,
-                    "chem_id": chem_id,
-                    "retrieved_smiles": smiles,
-                    "retrieved_sequence_length": len(gene_seq),
-                    "graph_nodes (atoms)": graph_batch.x.shape[0],
-                    "protein_embedding_shape": list(protein_emb.shape),
-                    "model_prediction": f"{probability:.4f}",
+                    "gene_id": result['gene_id'],
+                    "chem_id": result['chem_id'],
+                    "retrieved_smiles": result['smiles'],
+                    "retrieved_sequence_length": result['sequence_length'],
+                    "graph_nodes (atoms)": result['graph_nodes'],
+                    "protein_embedding_shape": result['protein_embedding_shape'],
+                    "model_prediction": f"{result['probability']:.4f}",
                 })
         
         except Exception as e:
             st.error(f"An error occurred: {e}")
+            # You can add more detailed error logging here
+            # st.exception(e)
