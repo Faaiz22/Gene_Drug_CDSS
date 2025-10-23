@@ -10,8 +10,8 @@ st.markdown("Enter a gene identifier and a chemical identifier to predict their 
 import streamlit as st
 import yaml  # Need to load config
 from src.utils.api_clients import DataEnricher
-# from src.models.dti_model import YourDTIModel  # <-- Import your actual model class
-# from src.preprocessing.feature_engineer import featurize_pair # <-- Import your featurizer
+from src.models.dti_model import YourDTIModel  # <-- Import your actual model class
+from src.preprocessing.feature_engineer import featurize_pair # <-- Import your featurizer
 
 # --- Caching: Load models and clients once ---
 @st.cache_resource
