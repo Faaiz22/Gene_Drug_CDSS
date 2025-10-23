@@ -1,43 +1,96 @@
 import torch
+import torch.nn as nn
+from torch_geometric.data import Data
 from captum.attr import IntegratedGradients
 
-# The original script imported Captum but did not use it.
-# This file serves as a placeholder for future model explainability features.
+from src.models.dti_model import DTIModel
+
+class DTIModelWrapper(nn.Module):
+    """
+    A wrapper for the DTIModel to make it compatible with Captum.
+    Captum's attribute methods require a forward function that accepts
+    tensors as inputs, not a Data object.
+    """
+    def __init__(self, model: DTIModel):
+        super().__init__()
+        self.model = model
+
+    def forward(self, x, edge_attr, protein_emb, edge_index, pos, batch):
+        """
+        Reconstructs the graph Data object from tensors and runs the model.
+        """
+        # Note: We create a minimal Data object. If your model needs more
+        # attributes from the graph, they must be passed here.
+        graph = Data(x=x, edge_index=edge_index, edge_attr=edge_attr, pos=pos, batch=batch)
+        
+        # We only care about the logits, not attn_weights, for attribution
+        logits, _ = self.model(graph, protein_emb)
+        return logits
 
 class ModelExplainer:
-    """Wrapper for Captum Integrated Gradients to explain model predictions."""
-
-    def __init__(self, model):
+    """
+    Handles the computation of model attributions using Integrated Gradients.
+    """
+    def __init__(self, model: DTIModel, device: torch.device):
         self.model = model
-        self.ig = IntegratedGradients(self.model_forward)
-
-    def model_forward(self, drug_features, protein_embedding):
-        """A forward function compatible with Captum's requirements."""
-        # This needs to be adapted based on how features are passed.
-        # For simplicity, let's assume 'drug_features' is the graph embedding
-        # and 'protein_embedding' is the protein embedding.
-        # A more complex wrapper would be needed to handle the full graph structure.
-        logits, _ = self.model(drug_features, protein_embedding)
-        return logits
+        self.device = device
+        # Create the Captum-compatible wrapper
+        self.model_wrapper = DTIModelWrapper(model).to(device)
+        self.model_wrapper.eval()
+        # Initialize Integrated Gradients
+        self.ig = IntegratedGradients(self.model_wrapper)
 
     def explain(self, graph, protein_emb):
         """
-        Generate feature attributions for a single drug-protein pair.
+        Calculates attributions for a single drug-protein pair.
+        
+        Args:
+            graph (torch_geometric.data.Data): The input graph for the drug.
+            protein_emb (torch.Tensor): The input protein embedding.
 
-        Note: This is a simplified example. Applying IG to GNNs, especially
-        with multiple inputs (graph, protein), requires careful handling of
-        baselines and input structures. This implementation is conceptual.
+        Returns:
+            A tuple of (atom_attributions, protein_attributions)
         """
-        print("Model explainability using Integrated Gradients is not fully implemented.")
+        # Ensure inputs are on the correct device
+        graph = graph.to(self.device)
+        protein_emb = protein_emb.to(self.device)
+        
+        # 1. Define inputs for attribution
+        inputs = (graph.x, graph.edge_attr, protein_emb)
+        
+        # 2. Define baselines (uninformative inputs, usually zeros)
+        baselines = (
+            torch.zeros_like(graph.x),
+            torch.zeros_like(graph.edge_attr),
+            torch.zeros_like(protein_emb)
+        )
+        
+        # 3. Define additional forward args (static parts of the graph)
+        additional_forward_args = (graph.edge_index, graph.pos, graph.batch)
+        
+        # 4. Compute attributions
+        # n_steps is a tradeoff: higher is more accurate but slower.
+        print("Calculating attributions... This may take a moment.")
+        attributions = self.ig.attribute(
+            inputs=inputs,
+            baselines=baselines,
+            additional_forward_args=additional_forward_args,
+            target=0,  # Target is the 0-th (and only) output logit
+            n_steps=50,
+            internal_batch_size=1
+        )
+        print("Attribution calculation complete.")
 
-        # We would need to define appropriate baselines for both inputs
-        baseline_graph_emb = torch.zeros_like(graph) # This is incorrect, needs proper handling
-        baseline_protein_emb = torch.zeros_like(protein_emb)
-
-        # The `attribute` method would be called here
-        # attributions = self.ig.attribute(
-        #     (graph_emb, protein_emb),
-        #     baselines=(baseline_graph_emb, baseline_protein_emb),
-        #     target=0
-        # )
-        return None
+        # 5. Process and return the results
+        Attributions[0] = atom features (x)
+        Attributions[1] = edge features (edge_attr)
+        Attributions[2] = protein embedding (protein_emb)
+        
+        # For atoms, we sum attributions across all features for each atom
+        atom_attributions = attributions[0].sum(dim=1).cpu().numpy()
+        
+        # For protein, we sum attributions across the embedding dim
+        # The embedding is [1, D], so we squeeze it.
+        protein_attributions = attributions[2].sum(dim=1).squeeze(0).cpu().numpy()
+        
+        return atom_attributions, protein_attributions
