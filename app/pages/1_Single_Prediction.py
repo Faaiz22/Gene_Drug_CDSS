@@ -1,56 +1,228 @@
+"""
+Enhanced Single Prediction Page with Agentic Analysis.
+"""
+
 import streamlit as st
-import torch
-from app.caching_utils import get_cached_prediction # <-- Import our new function
+from pathlib import Path
+import sys
 
-# --- Page Setup ---
-# All resources are loaded on demand by get_cached_prediction
-try:
-    st.set_page_config(page_title="Single Prediction", page_icon="🎯")
-except Exception as e:
-    # This might fail if streamlit is already set_page_config'd
-    pass
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-st.title("🎯 Single Pair Prediction")
-st.markdown("Enter a gene identifier and a chemical identifier to predict their interaction probability.")
+from src.agent.agent_orchestrator import DTIAgentOrchestrator
+from src.core_processing import load_config
 
-# --- Input Form ---
+st.set_page_config(
+    page_title="Single Prediction - Agentic CDSS",
+    page_icon="🎯",
+    layout="wide"
+)
+
+# Initialize agent (cached)
+@st.cache_resource
+def get_agent():
+    config = load_config()
+    # Try to get API key from secrets, fallback to config
+    try:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+    except:
+        api_key = None
+    return DTIAgentOrchestrator(config, api_key=api_key)
+
+st.title("🎯 Agentic Drug-Gene Interaction Analysis")
+st.markdown("""
+This advanced system uses an **autonomous AI agent** to:
+- 🔍 Fetch molecular data from public databases
+- 🧬 Predict interaction probability using deep learning
+- 💡 Explain predictions at the molecular level
+- 📚 Search PubMed for supporting research
+- 📋 Generate comprehensive clinical reports
+""")
+
+# Sidebar for analysis options
+with st.sidebar:
+    st.header("⚙️ Analysis Options")
+    
+    analysis_mode = st.radio(
+        "Analysis Depth",
+        ["Quick Prediction", "Standard Analysis", "Full Report"],
+        index=1
+    )
+    
+    st.markdown("---")
+    
+    include_explanation = st.checkbox(
+        "Include Molecular Explanation",
+        value=(analysis_mode != "Quick Prediction"),
+        help="Generate detailed explanation using Integrated Gradients"
+    )
+    
+    include_literature = st.checkbox(
+        "Search PubMed Literature",
+        value=(analysis_mode == "Full Report"),
+        help="Find relevant research papers"
+    )
+    
+    generate_report = st.checkbox(
+        "Generate Clinical Report",
+        value=(analysis_mode == "Full Report"),
+        help="Create comprehensive clinical summary"
+    )
+    
+    save_visualizations = st.checkbox(
+        "Save Visualizations",
+        value=True,
+        help="Save molecular structure and attention plots"
+    )
+
+# Main content
 col1, col2 = st.columns(2)
-with col1:
-    gene_id = st.text_input("Gene Identifier", placeholder="e.g., CYP2C9 or PA4450", value="CYP2C9")
-with col2:
-    chem_id = st.text_input("Chemical Identifier", placeholder="e.g., celecoxib or PA44836", value="celecoxib")
 
-if st.button("Predict Interaction", type="primary"):
-    if not gene_id or not chem_id:
-        st.warning("Please enter both a gene and a chemical identifier.")
+with col1:
+    drug_name = st.text_input(
+        "Drug Name or ID",
+        placeholder="e.g., Imatinib, CID 5330",
+        help="Enter drug name, PubChem CID, or PharmGKB ID"
+    )
+    drug_id = st.text_input(
+        "Drug ID (Optional)",
+        placeholder="e.g., CID 5330, PA448515",
+        help="Provide specific ID for more accurate results"
+    )
+
+with col2:
+    gene_name = st.text_input(
+        "Gene/Protein Name or ID",
+        placeholder="e.g., ABL1, CYP2D6",
+        help="Enter gene symbol, protein name, or UniProt ID"
+    )
+    gene_id = st.text_input(
+        "Gene ID (Optional)",
+        placeholder="e.g., P00519, PA24356",
+        help="Provide specific ID for more accurate results"
+    )
+
+# Analysis button
+if st.button("🚀 Run Agentic Analysis", type="primary", use_container_width=True):
+    if not drug_name or not gene_name:
+        st.error("⚠️ Please provide both drug and gene names")
     else:
         try:
-            # 1. Run the cached prediction
-            # Streamlit will 'await' this async function
-            # and show a spinner.
-            result = get_cached_prediction(gene_id, chem_id)
-
-            st.success(f"Prediction for **{gene_id}** and **{chem_id}** complete!")
-
-            # --- Display Real Results ---
-            prob_percent = result['probability'] * 100
-            delta_label = "High Likelihood" if result['probability'] > 0.5 else "Low Likelihood"
+            agent = get_agent()
             
-            st.metric(label="Interaction Probability", value=f"{prob_percent:.1f}%", delta=delta_label)
-            st.progress(result['probability'])
-
-            with st.expander("View Retrieved Data & Features"):
-                st.json({
-                    "gene_id": result['gene_id'],
-                    "chem_id": result['chem_id'],
-                    "retrieved_smiles": result['smiles'],
-                    "retrieved_sequence_length": result['sequence_length'],
-                    "graph_nodes (atoms)": result['graph_nodes'],
-                    "protein_embedding_shape": result['protein_embedding_shape'],
-                    "model_prediction": f"{result['probability']:.4f}",
-                })
+            # Build query
+            query = f"Analyze the interaction between drug '{drug_name}'"
+            if drug_id:
+                query += f" (ID: {drug_id})"
+            query += f" and gene '{gene_name}'"
+            if gene_id:
+                query += f" (ID: {gene_id})"
+            query += "."
+            
+            # Run analysis with progress tracking
+            with st.spinner("🤖 Agent is thinking and using tools..."):
+                result = agent.analyze_interaction(
+                    query,
+                    include_literature=include_literature,
+                    include_explanation=include_explanation,
+                    generate_report=generate_report
+                )
+            
+            if result['status'] == 'success':
+                st.success("✅ Analysis Complete!")
+                
+                # Display agent's response
+                st.markdown("### 🤖 Agent's Analysis")
+                st.markdown(result['response'])
+                
+                # Show intermediate steps in expander
+                if result.get('intermediate_steps'):
+                    with st.expander("🔍 View Agent's Reasoning Process"):
+                        for i, step in enumerate(result['intermediate_steps'], 1):
+                            st.markdown(f"**Step {i}:** {step}")
+                
+                # Display visualizations if saved
+                from src.agent.agentic_tools import agent_state
+                
+                if save_visualizations and 'explanation' in agent_state:
+                    viz_paths = agent_state['explanation'].get('visualization_paths', {})
+                    
+                    if viz_paths:
+                        st.markdown("### 📊 Molecular Visualizations")
+                        
+                        viz_cols = st.columns(len(viz_paths))
+                        
+                        for i, (viz_type, viz_path) in enumerate(viz_paths.items()):
+                            with viz_cols[i]:
+                                st.image(
+                                    str(viz_path),
+                                    caption=viz_type.replace('_', ' ').title(),
+                                    use_container_width=True
+                                )
+                
+                # Display literature if searched
+                if include_literature and 'literature' in agent_state:
+                    papers = agent_state['literature']
+                    
+                    if papers:
+                        st.markdown("### 📚 Supporting Literature")
+                        
+                        for paper in papers:
+                            with st.expander(f"📄 {paper['title']} ({paper['year']})"):
+                                st.markdown(f"**Authors:** {paper['authors']}")
+                                st.markdown(f"**Journal:** {paper['journal']}")
+                                st.markdown(f"**PMID:** {paper['pmid']}")
+                                st.markdown(f"**Abstract:** {paper['abstract_preview']}")
+                                if paper.get('url'):
+                                    st.markdown(f"[🔗 View on PubMed]({paper['url']})")
+                
+                # Display clinical report if generated
+                if generate_report and 'clinical_report' in agent_state:
+                    st.markdown("### 📋 Clinical Report")
+                    st.code(agent_state['clinical_report'], language=None)
+                    
+                    # Download button
+                    st.download_button(
+                        label="📥 Download Report",
+                        data=agent_state['clinical_report'],
+                        file_name=f"DTI_Report_{drug_name}_{gene_name}.txt",
+                        mime="text/plain"
+                    )
+            
+            else:
+                st.error(f"❌ Analysis failed: {result.get('error', 'Unknown error')}")
         
         except Exception as e:
-            st.error(f"An error occurred: {e}")
-            # You can add more detailed error logging here
-            # st.exception(e)
+            st.error(f"❌ An error occurred: {str(e)}")
+            st.exception(e)
+
+# Help section
+with st.expander("ℹ️ How to Use This Tool"):
+    st.markdown("""
+    **Step 1:** Enter drug and gene identifiers
+    - Use common names (e.g., "Imatinib", "ABL1") or specific IDs
+    - Optional IDs improve accuracy
+    
+    **Step 2:** Choose analysis options
+    - **Quick Prediction**: Fast probability estimate only
+    - **Standard Analysis**: Includes molecular explanation
+    - **Full Report**: Complete analysis with literature and clinical summary
+    
+    **Step 3:** Run analysis
+    - The AI agent will autonomously:
+        1. Fetch molecular data from APIs
+        2. Generate 3D structures and embeddings
+        3. Predict interaction probability
+        4. Explain the prediction (if enabled)
+        5. Search relevant papers (if enabled)
+        6. Synthesize clinical report (if enabled)
+    
+    **Understanding Results:**
+    - **Probability > 70%**: High confidence of interaction
+    - **Probability 50-70%**: Moderate confidence
+    - **Probability < 50%**: Low confidence
+    - Always consider uncertainty estimates and supporting evidence
+    """)
+
+st.markdown("---")
+st.caption("⚠️ **Disclaimer:** This tool is for research purposes only. Not for clinical decision-making.")
