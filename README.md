@@ -172,21 +172,6 @@ Understand prediction rationale:
 - **Prediction Head**: 3-layer MLP with dropout regularization
 
 
-**Disclaimer**: This tool is for research and educational purposes only. Always consult qualified healthcare professionals for medical decisions.
-
-This repository contains the source code for a deep learning model designed to predict interactions between drugs (chemicals) and genes (proteins). The system serves as a Clinical Decision Support System (CDSS) to help researchers and clinicians identify potential drug-target interactions (DTIs), aiding in drug discovery and personalized medicine.
-
-The model leverages a state-of-the-art E(n)-Equivariant Graph Neural Network (EGNN) to process 3D molecular structures of drugs and a pre-trained ESM-2 transformer model for protein sequence embeddings. A cross-attention mechanism integrates these representations to predict the likelihood of an interaction.
-
-## Key Features
-
-- **3D Molecular Representation**: Uses 3D conformers of molecules, capturing spatial information crucial for molecular interactions.
-- **Equivariant GNN**: Employs an EGNN that respects the rotational and translational symmetries of 3D space.
-- **Protein Language Model**: Utilizes ESM-2, a powerful transformer model pre-trained on millions of protein sequences, to generate rich embeddings.
-- **Cross-Attention Mechanism**: Intelligently combines drug and protein information to focus on relevant interaction features.
-- **End-to-End Pipeline**: Includes scripts for data fetching, preprocessing, model training, evaluation, and prediction.
-- **Streamlit Interface**: A user-friendly web application for single-pair prediction, batch analysis, and model interpretation (under development).
-
 ## Project Structure
 
 ```
