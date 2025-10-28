@@ -1,94 +1,179 @@
+# app/pages/2_Batch_Analysis.py (COMPLETE REPLACEMENT)
 import streamlit as st
 import pandas as pd
 import asyncio
 import io
-from app.caching_utils import get_cached_prediction # Import our cached function
+from concurrent.futures import ThreadPoolExecutor
+from typing import List, Dict
+import time
 
-st.set_page_config(page_title="Batch Analysis", page_icon="📂")
+st.set_page_config(page_title="Batch Analysis", page_icon="📂", layout="wide")
+
 st.title("📂 Batch Analysis")
-st.markdown("Upload a TSV or CSV file with 'gene_id' and 'chem_id' columns...")
-st.warning("Note: This feature is for small batches (<100 pairs). Large files may time out.")
 
-uploaded_file = st.file_uploader("Choose a file", type=['csv', 'tsv'])
+st.markdown("""
+Upload a file with drug-gene pairs for batch prediction analysis.
 
-async def run_batch_processing(dataframe):
-    """
-    Creates and runs all prediction tasks concurrently.
-    """
-    tasks = []
-    for _, row in dataframe.iterrows():
-        # Create a task for each row
-        tasks.append(
-            get_cached_prediction(
-                gene_id=str(row['gene_id']),
-                chem_id=str(row['chem_id'])
-            )
+**File Format Requirements:**
+- CSV or TSV format
+- Required columns: `gene_id`, `chem_id`
+- Maximum 1000 pairs per batch
+""")
+
+uploaded_file = st.file_uploader(
+    "Choose a file", 
+    type=['csv', 'tsv'],
+    help="Upload CSV/TSV with gene_id and chem_id columns"
+)
+
+def process_single_pair(row: pd.Series) -> Dict:
+    """Process a single pair synchronously (runs in thread)"""
+    from app.caching_utils import get_cached_prediction
+    
+    try:
+        result = get_cached_prediction(
+            gene_id=str(row['gene_id']),
+            chem_id=str(row['chem_id'])
         )
+        return result
+    except Exception as e:
+        return {
+            "gene_id": row['gene_id'],
+            "chem_id": row['chem_id'],
+            "probability": None,
+            "error": str(e)
+        }
+
+
+def run_batch_processing(dataframe: pd.DataFrame, max_workers: int = 4) -> pd.DataFrame:
+    """
+    Process batch using ThreadPoolExecutor for true parallelism.
+    Streamlit-compatible (no async event loop issues).
+    """
+    results = []
     
-    st.info(f"Submitting {len(tasks)} pairs for processing...")
-    progress_bar = st.progress(0, text="Running predictions...")
+    # Create progress tracking
+    progress_bar = st.progress(0)
+    status_text = st.empty()
     
-    # Run all tasks concurrently
-    # Note: We can't show granular progress with asyncio.gather
-    # We will just update the bar as results come in (or at the end)
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    start_time = time.time()
     
-    progress_bar.progress(1.0, text="Processing complete!")
-    
-    # Process results
-    final_results = []
-    for i, res in enumerate(results):
-        original_row = dataframe.iloc[i]
-        if isinstance(res, Exception):
-            final_results.append({
-                "gene_id": original_row['gene_id'],
-                "chem_id": original_row['chem_id'],
-                "probability": None,
-                "error": str(res)
-            })
-        else:
-            final_results.append({
-                "gene_id": res['gene_id'],
-                "chem_id": res['chem_id'],
-                "probability": res['probability'],
-                "error": None
-            })
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(process_single_pair, row)
+            for _, row in dataframe.iterrows()
+        ]
+        
+        for i, future in enumerate(futures):
+            result = future.result()
+            results.append(result)
             
-    return pd.DataFrame(final_results)
+            # Update progress
+            progress = (i + 1) / len(futures)
+            progress_bar.progress(progress)
+            
+            elapsed = time.time() - start_time
+            eta = (elapsed / (i + 1)) * (len(futures) - i - 1)
+            
+            status_text.text(
+                f"Processing: {i + 1}/{len(futures)} | "
+                f"Elapsed: {elapsed:.1f}s | ETA: {eta:.1f}s"
+            )
+    
+    progress_bar.progress(1.0)
+    status_text.text(f"✅ Complete! Total time: {time.time() - start_time:.1f}s")
+    
+    return pd.DataFrame(results)
+
 
 if uploaded_file is not None:
     try:
-        # Read the file content into a dataframe
+        # Read the file
         content = uploaded_file.getvalue()
-        if 'tsv' in uploaded_file.name:
+        
+        if uploaded_file.name.endswith('.tsv'):
             dataframe = pd.read_csv(io.BytesIO(content), sep='\t')
         else:
-            dataframe = pd.read_csv(io.BytesIO(content), sep=',')
+            dataframe = pd.read_csv(io.BytesIO(content))
+        
+        # Validate columns
+        required_cols = ['gene_id', 'chem_id']
+        missing_cols = [col for col in required_cols if col not in dataframe.columns]
+        
+        if missing_cols:
+            st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
+            st.info("Your file must contain: `gene_id` and `chem_id` columns")
+            st.stop()
+        
+        # Validate size
+        if len(dataframe) > 1000:
+            st.error(f"❌ File too large ({len(dataframe)} rows). Maximum 1000 pairs allowed.")
+            st.stop()
+        
+        # Show preview
+        st.success(f"✅ Loaded {len(dataframe)} pairs from `{uploaded_file.name}`")
+        
+        with st.expander("📋 Preview Data", expanded=True):
+            st.dataframe(dataframe.head(10), use_container_width=True)
+        
+        # Configuration
+        col1, col2 = st.columns(2)
+        with col1:
+            max_workers = st.slider(
+                "Parallel Workers",
+                min_value=1,
+                max_value=8,
+                value=4,
+                help="Number of parallel processing threads"
+            )
+        
+        # Run button
+        if st.button("🚀 Run Batch Analysis", type="primary", use_container_width=True):
             
-        st.success(f"Successfully loaded {len(dataframe)} pairs from `{uploaded_file.name}`.")
-        st.dataframe(dataframe.head())
-
-        if 'gene_id' not in dataframe.columns or 'chem_id' not in dataframe.columns:
-            st.error("The uploaded file must contain 'gene_id' and 'chem_id' columns.")
-        else:
-            if st.button("Run Batch Analysis", type="primary"):
-                with st.spinner(f"Processing {len(dataframe)} pairs... This may take time."):
-                    try:
-                        # Run the async function
-                        # Streamlit automatically handles the event loop
-                        results_df = asyncio.run(run_batch_processing(dataframe))
-                        
-                        st.success("Batch analysis complete!")
-                        st.dataframe(results_df)
-
-                        st.download_button(
-                            label="Download Results as CSV",
-                            data=results_df.to_csv(index=False).encode('utf-8'),
-                            file_name='batch_prediction_results.csv',
-                            mime='text/csv',
-                        )
-                    except Exception as e:
-                        st.error(f"An error occurred during batch processing: {e}")
-
+            st.markdown("---")
+            
+            with st.spinner("Processing batch..."):
+                results_df = run_batch_processing(dataframe, max_workers=max_workers)
+            
+            # Display results
+            st.markdown("### 📊 Results")
+            
+            # Summary metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            successful = results_df['probability'].notna().sum()
+            failed = results_df['probability'].isna().sum()
+            avg_prob = results_df['probability'].mean()
+            high_prob = (results_df['probability'] > 0.7).sum()
+            
+            col1.metric("Total Pairs", len(results_df))
+            col2.metric("Successful", successful)
+            col3.metric("Failed", failed)
+            col4.metric("High Probability (>70%)", high_prob)
+            
+            # Results table
+            st.dataframe(
+                results_df.sort_values('probability', ascending=False, na_position='last'),
+                use_container_width=True
+            )
+            
+            # Download button
+            csv_data = results_df.to_csv(index=False).encode('utf-8')
+            
+            st.download_button(
+                label="📥 Download Results (CSV)",
+                data=csv_data,
+                file_name=f'batch_predictions_{time.strftime("%Y%m%d_%H%M%S")}.csv',
+                mime='text/csv',
+                use_container_width=True
+            )
+            
+            # Show errors if any
+            errors = results_df[results_df['error'].notna()]
+            if not errors.empty:
+                with st.expander(f"⚠️ Errors ({len(errors)} pairs)", expanded=False):
+                    st.dataframe(errors[['gene_id', 'chem_id', 'error']], use_container_width=True)
+    
     except Exception as e:
-        st.error(f"An error occurred while processing the file: {e}")
+        st.error(f"❌ Error processing file: {str(e)}")
+        st.exception(e)
