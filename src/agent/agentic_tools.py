@@ -12,6 +12,22 @@ from pathlib import Path
 # Global state management for agent
 agent_state = {}
 
+"""
+Pydantic models for agent tool input validation.
+The tool functions themselves are defined in agent_orchestrator.py
+to allow them to access the agent's internal state.
+"""
+
+from pydantic import BaseModel, Field
+
+class DrugInput(BaseModel):
+    drug_name: str = Field(description="The name, PubChem CID, or PharmGKB ID of the drug.")
+
+class GeneInput(BaseModel):
+    gene_name: str = Field(description="The gene symbol, UniProt ID, or PharmGKB ID of the gene.")
+
+class LiteratureInput(BaseModel):
+    query: str = Field(description="A specific question or topic to search for in the literature, e.g., 'What are the known interactions between Warfarin and CYP2C9?'")
 
 @tool
 def fetch_molecular_data_tool(
