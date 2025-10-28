@@ -95,7 +95,7 @@ paths:
 streamlit run app/main.py
 ```
 
-The application will be available at `http://localhost:8501`
+The application will be available at `https://genedrugcdss-guhcymfsyudq9mv2lxcgds.streamlit.app/`
 
 ## 📚 Usage Guide
 
