@@ -4,9 +4,11 @@ langchain
 langchain-google-genai
 google-generativeai
 
-# PyTorch & PyG (MUST be compatible!)
-# Check https://pytorch.org/get-started/locally/
-# Check https://data.pyg.org/whl/
+# Async Support
+nest-asyncio
+httpx
+
+# PyTorch & PyG
 torch
 torchvision
 torchaudio
@@ -24,10 +26,19 @@ pandas
 numpy
 seaborn
 matplotlib
-cairosvg
 scikit-learn
+biopython
+
+# Explainability
+captum
+
+# Visualization
+py3Dmol
+stpy3mol
+pillow
 
 # Utilities
 requests
+pyyaml
 ipython
-pillow
+tqdm
