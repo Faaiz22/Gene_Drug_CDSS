@@ -1,26 +1,33 @@
-# requirements.txt
+# Core Streamlit & AI
+streamlit
+langchain
+langchain-google-genai
+google-generativeai
+
+# PyTorch & PyG (MUST be compatible!)
+# Check https://pytorch.org/get-started/locally/
+# Check https://data.pyg.org/whl/
 torch
 torchvision
 torchaudio
-torch-scatter
-torch-sparse
-torch-cluster
-torch-geometric
+torch_geometric
+pyg_lib
+torch_scatter
+torch_sparse
+torch_cluster
+torch_spline_conv
+
+# Scientific & Molecular
 rdkit
-biopython
 transformers
-sentencepiece
-scikit-learn
 pandas
-matplotlib
+numpy
 seaborn
-tqdm
-deepchem
-captum
-httpx
-PyYAML
-streamlit
+matplotlib
+cairosvg
+scikit-learn
+
+# Utilities
 requests
-py3Dmol     # <-- Add for 3D rendering
-stpy3mol    # <-- Add for Streamlit 3D component
-httpx       # <-- Recommended for async API calls
+ipython
+pillow
