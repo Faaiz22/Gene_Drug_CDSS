@@ -1,46 +1,44 @@
-# Core Streamlit & AI
-streamlit
-langchain
-langchain-google-genai
-google-generativeai
+# --- Find-Links for PyTorch Geometric (CPU) ---
+# This tells pip where to find the pre-built CPU wheels for PyG.
+# This MUST be at the top of the file.
+-f https://data.pyg.org/whl/torch-2.2.0+cpu.html
 
-# Async Support
-nest-asyncio
-httpx
+# --- Core ML & PyTorch ---
+# We pin torch to match the find-links URL for stability
+torch==2.2.0
+torchvision==0.17.0
+torchaudio==2.2.0
+torch_geometric==2.5.3 # This will now use the URL above to find its dependencies
 
-# PyTorch & PyG
-torch
-torchvision
-torchaudio
-torch_geometric
-pyg_lib
-torch_scatter
-torch_sparse
-torch_cluster
-torch_spline_conv
+# --- Core Streamlit & AI ---
+streamlit==1.36.0
+langchain==0.2.6
+langchain-google-genai==1.0.6
+google-generativeai==0.7.2
 
-# Scientific & Molecular
-rdkit
-transformers
-pandas
-numpy
-seaborn
-matplotlib
-scikit-learn
-biopython
+# --- Async & API Clients ---
+httpx==0.27.0
 
-# Explainability
-captum
+# --- Scientific & Molecular ---
+rdkit==2024.3.3
+transformers==4.42.3
+pandas==2.2.2
+numpy==1.26.4
+seaborn==0.13.2
+matplotlib==3.9.0
+scikit-learn==1.5.0
+biopython==1.84
 
-# Visualization
-py3Dmol
-stpy3mol
-pillow
+# --- Explainability ---
+captum==0.7.0
 
-# Utilities
-requests
-pyyaml
-ipython
-tqdm
+# --- Visualization ---
+py3Dmol==2.1.0
+stpy3mol==1.1.3
+pillow==10.4.0
 
-PyAML
+# --- Utilities ---
+requests==2.32.3
+PyYAML==6.0.1
+ipython==8.26.0
+tqdm==4.66.4
