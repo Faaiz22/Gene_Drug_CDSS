@@ -4,6 +4,8 @@ paths:
   output_dir: "results/"
   checkpoint_dir: "checkpoints/"
   relationships_file: "relationships.tsv"
+  explanation_dir: "explanations/"  
+  literature_cache: "cache/pubmed/"  
 
 filter_settings:
   filter_genes_only: true
@@ -22,9 +24,10 @@ model:
   attention_dim: 256
   mlp_hidden_dims: [512, 256, 128]
   dropout_rate: 0.3
+  model_weights: "checkpoints/best_model.pt"  # NEW
 
 training:
-  device: "cuda" # "cuda" or "cpu"
+  device: "cuda"
   batch_size: 16
   learning_rate: 0.0001
   weight_decay: 0.0001
@@ -43,3 +46,33 @@ processing:
   max_conformers: 1
   conformer_optimize_steps: 200
   mc_dropout_samples: 20
+
+# NEW: Explainability Configuration
+explainability:
+  enable_integrated_gradients: true
+  ig_steps: 50
+  ig_baseline_strategy: "zero"  # zero, gaussian, uniform
+  use_generative_explanations: true
+  generative_model: "google/flan-t5-base"
+  generative_max_length: 250
+  visualization_dpi: 300
+  colormap: "plasma"
+
+# NEW: Agentic AI Configuration
+agent:
+  llm_provider: "google"  # google, openai
+  llm_model: "gemini-1.5-pro-latest"
+  temperature: 0.0
+  max_iterations: 15
+  enable_pubmed_search: true
+  max_papers_per_query: 5
+  enable_molecular_reasoning: true
+  enable_clinical_context: true
+
+# NEW: PubMed API Configuration
+pubmed:
+  base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
+  email: "faaiz.ds24@duk.ac.in"  
+  api_key: "1ed2a4f8626f38b2bccb05b499bc8ad54009"  
+  max_retries: 3
+  cache_expiry_days: 30
