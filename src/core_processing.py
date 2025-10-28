@@ -2,14 +2,76 @@ import yaml
 import torch
 from torch_geometric.loader import DataLoader
 from transformers import AutoTokenizer, AutoModel
-import asyncio
+
 
 # Import your project's modules
 from src.utils.api_clients import DataEnricher
 from src.models.dti_model import DTIModel
 from src.molecular_3d.conformer_generator import smiles_to_3d_graph
 
-# --- Device & Config ---
+# ... (all other imports)
+# REMOVE: import nest_asyncio
+# REMOVE: from concurrent.futures import ThreadPoolExecutor
+
+class CoreProcessor:
+    def __init__(self, config):
+        # ... (your existing __init__)
+        pass
+
+    # ... (all other methods like load_model, run_model, etc.)
+
+    # REMOVED: def process_single_pair(self, gene_id, chem_id): ...
+    # This function is GONE.
+
+    async def process_pair_logic(self, gene_id: str, chem_id: str) -> dict:
+        """
+        Asynchronously processes a single gene-drug pair.
+        This is the core logic for batch processing.
+        """
+        # REMOVED: nest_asyncio.apply()
+        
+        start_time = time.time()
+        result = {"gene_id": gene_id, "chem_id": chem_id, "status": "Failed"}
+        
+        try:
+            # 1. Validate inputs
+            gene_id = validate_gene_id(gene_id)
+            chem_id = validate_chem_id(chem_id)
+
+            # 2. Fetch data concurrently
+            async with self.get_enricher() as enricher:
+                smiles_task = enricher.fetch_smiles(chem_id)
+                sequence_task = enricher.fetch_sequence(gene_id)
+                
+                smiles, sequence = await asyncio.gather(
+                    smiles_task, tran_task, return_exceptions=True
+                )
+
+            # 3. Handle data fetching errors
+            if isinstance(smiles, Exception):
+                raise smiles
+            if isinstance(sequence, Exception):
+                raise sequence
+                
+            result["smiles"] = smiles
+            result["sequence"] = "..." # Don't store full sequence in result table
+
+            # 4. Run model
+            model_output = self.run_model(smiles, sequence)
+            
+            result.update({
+                "status": "Success",
+                "prediction": model_output["prediction"],
+                "probability": model_output["probability"]
+            })
+
+        except (DataFetchException, ValidationException, FeaturizationException, ModelException) as e:
+            result["error"] = e.message
+        except Exception as e:
+            result["error"] = f"An unexpected error: {str(e)}"
+            
+        result["runtime"] = time.time() - start_time
+        return result
 
 def get_device() -> torch.device:
     """Gets the available torch device."""
