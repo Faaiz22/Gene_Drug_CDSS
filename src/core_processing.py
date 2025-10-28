@@ -111,3 +111,114 @@ async def process_pair_logic(gene_id: str, chem_id: str,
         "graph_nodes": graph_batch.x.shape[0],
         "protein_embedding_shape": list(protein_emb.shape)
     }
+    # src/core_processing.py (ADDITIONS)
+
+# Keep your existing async function, but add this:
+
+def process_pair_logic_sync(
+    gene_id: str, 
+    chem_id: str, 
+    enricher, 
+    protein_featurizer, 
+    model, 
+    config: dict, 
+    device: torch.device
+) -> dict:
+    """
+    Synchronous wrapper for process_pair_logic.
+    Handles event loop creation for Streamlit compatibility.
+    """
+    try:
+        # Try to get existing loop
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            # If loop is running (Streamlit case), use nest_asyncio
+            import nest_asyncio
+            nest_asyncio.apply()
+            result = loop.run_until_complete(
+                process_pair_logic(
+                    gene_id, chem_id, enricher, protein_featurizer, 
+                    model, config, device
+                )
+            )
+        else:
+            result = loop.run_until_complete(
+                process_pair_logic(
+                    gene_id, chem_id, enricher, protein_featurizer, 
+                    model, config, device
+                )
+            )
+    except RuntimeError:
+        # No event loop, create new one
+        result = asyncio.run(
+            process_pair_logic(
+                gene_id, chem_id, enricher, protein_featurizer, 
+                model, config, device
+            )
+        )
+    
+    return result
+
+
+async def process_pair_logic(
+    gene_id: str, 
+    chem_id: str, 
+    enricher, 
+    protein_featurizer, 
+    model, 
+    config: dict, 
+    device: torch.device
+) -> dict:
+    """
+    The core logic for a single prediction, from IDs to a result.
+    This is async and returns a dictionary.
+    """
+    
+    # 1. Fetch data concurrently
+    try:
+        smiles, sequence = await asyncio.gather(
+            enricher.fetch_smiles(chem_id),
+            enricher.fetch_sequence(gene_id)
+        )
+    except Exception as e:
+        raise RuntimeError(f"Failed during API data fetching for ({gene_id}, {chem_id}): {e}")
+
+    if not smiles:
+        raise ValueError(f"Could not retrieve SMILES for: {chem_id}")
+    if not sequence:
+        raise ValueError(f"Could not retrieve sequence for: {gene_id}")
+
+    # 2. Featurize Drug (Sync - move to thread if slow)
+    from src.molecular_3d.conformer_generator import smiles_to_3d_graph
+    graph = await asyncio.to_thread(smiles_to_3d_graph, smiles, config)
+    
+    if graph is None:
+        raise ValueError(f"Failed to generate 3D graph for SMILES: {smiles}")
+    
+    # 3. Featurize Protein (Sync - move to thread)
+    protein_emb = await asyncio.to_thread(protein_featurizer.featurize, sequence)
+    
+    # 4. Create a PyG batch
+    from torch_geometric.data import Batch
+    graph_batch = Batch.from_data_list([graph]).to(device)
+    protein_emb_batch = protein_emb.unsqueeze(0).to(device)
+
+    # 5. Run prediction (Sync - move to thread)
+    def run_prediction():
+        model.eval()
+        with torch.no_grad():
+            logits, attn_weights = model(graph_batch, protein_emb_batch)
+            probability = torch.sigmoid(logits).item()
+        return probability
+    
+    probability = await asyncio.to_thread(run_prediction)
+
+    return {
+        "gene_id": gene_id,
+        "chem_id": chem_id,
+        "smiles": smiles,
+        "sequence_length": len(sequence),
+        "probability": probability,
+        "graph_nodes": graph_batch.x.shape[0],
+        "protein_embedding_shape": list(protein_emb_batch.shape)
+    }
