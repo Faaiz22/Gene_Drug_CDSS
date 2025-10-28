@@ -8,12 +8,77 @@ from typing import Optional, Dict
 from rdkit import Chem
 import hashlib
 import json
-
+# Add to imports
+from .exceptions import DataFetchException, format_user_error
+ 
 class DataEnricher:
     """
     Fetches protein sequences and chemical SMILES from external APIs asynchronously.
     Caches results locally for efficiency.
     """
+# Update fetch_smiles method
+async def fetch_smiles(self, chem_id: str) -> str:  # Changed: no Optional, raises instead
+    """
+    Fetch SMILES with proper error handling.
+    
+    Raises:
+        DataFetchException: If SMILES cannot be retrieved
+    """
+    chem_id = str(chem_id).strip()
+    
+    if not chem_id:
+        raise DataFetchException(
+            format_user_error('smiles_not_found', drug_id=chem_id),
+            "Empty or whitespace-only identifier provided"
+        )
+    
+    # ... existing cache check code ...
+    
+    # ... existing API call code ...
+    
+    if not smiles:
+        raise DataFetchException(
+            format_user_error('smiles_not_found', drug_id=chem_id),
+            f"Tried CID and name searches. Last error: {self.last_error}"
+        )
+    
+    # Validate SMILES
+    if not Chem.MolFromSmiles(smiles):
+        raise DataFetchException(
+            format_user_error('invalid_smiles', smiles=smiles),
+            f"SMILES validation failed for {chem_id}"
+        )
+    
+    # Cache and return
+    # ...
+    return smiles
+
+
+async def fetch_sequence(self, gene_id: str) -> str:  # No Optional
+    """
+    Fetch sequence with proper error handling.
+    
+    Raises:
+        DataFetchException: If sequence cannot be retrieved
+    """
+    gene_id = str(gene_id).strip()
+    
+    if not gene_id:
+        raise DataFetchException(
+            format_user_error('sequence_not_found', gene_id=gene_id),
+            "Empty or whitespace-only identifier provided"
+        )
+    
+    # ... existing code ...
+    
+    if not seq or len(seq) < 20:
+        raise DataFetchException(
+            format_user_error('sequence_not_found', gene_id=gene_id),
+            f"Sequence too short or not found. Last error: {self.last_error}"
+        )
+    
+    return seq
+
 
     def __init__(self, config: Dict):
         self.config = config
