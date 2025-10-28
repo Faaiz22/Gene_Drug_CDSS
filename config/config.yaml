@@ -69,10 +69,9 @@ agent:
   enable_molecular_reasoning: true
   enable_clinical_context: true
 
-# NEW: PubMed API Configuration
 pubmed:
   base_url: "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/"
-  email: "faaiz.ds24@duk.ac.in"  
-  api_key: "1ed2a4f8626f38b2bccb05b499bc8ad54009"  
+  email: "${PUBMED_EMAIL}"  # Load from environment
+  api_key: "${PUBMED_API_KEY}"  # Load from environment
   max_retries: 3
   cache_expiry_days: 30
