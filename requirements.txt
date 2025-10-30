@@ -14,14 +14,14 @@ plotly
 numpy
 
 langchain
+langchain-core
 langchain-google-genai
 langchain-community
-
-seaborn          
+langchain-agents    
+seaborn
 
 pandas
 rdkit
 PyYAML
 httpx
 biopython
-
