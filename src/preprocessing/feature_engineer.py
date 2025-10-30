@@ -1,134 +1,126 @@
-import numpy as np
-import pandas as pd
-from typing import Dict, Any, Optional
+"""
+Feature Engineer for 3D Drug-Protein Interaction
+
+This module performs the state-of-the-art featurization:
+1.  Drug: Converts SMILES to a 3D graph with atomic coordinates (for EGNN).
+2.  Protein: Converts amino acid sequence to a high-dimensional embedding
+    using the ESM-2 Protein Language Model.
+"""
 
 import torch
-from torch.utils.data import Dataset
-from torch_geometric.data import Data, Batch
-
+from torch_geometric.data import Data
 from rdkit import Chem
-from rdkit.Chem.Scaffolds import MurckoScaffold
-from transformers import AutoTokenizer, EsmModel
-from tqdm.auto import tqdm
+from rdkit.Chem import AllChem
+from transformers import EsmModel, EsmTokenizer
+import logging
 
-from ..molecular_3d.conformer_generator import smiles_to_3d_graph
+# Set up logging
+logger = logging.getLogger(__name__)
 
-
-def generate_scaffold(smiles, include_chirality=False):
-    """Generate Bemis-Murcko scaffold from SMILES"""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None: return None
-    try:
-        scaffold = MurckoScaffold.MurckoDecompose(mol)
-        return Chem.MolToSmiles(scaffold, isomericSmiles=include_chirality) if scaffold else None
-    except: return None
-
-
-def scaffold_split(df, train_size=0.70, test_size=0.20, val_size=0.10, random_state=42):
-    """Split dataset based on molecular scaffolds"""
-    print("\n🔬 Generating molecular scaffolds for data splitting...")
-    np.random.seed(random_state)
-    df['scaffold'] = df['smiles'].apply(generate_scaffold)
-    df = df.dropna(subset=['scaffold'])
-
-    scaffolds = df['scaffold'].unique()
-    np.random.shuffle(scaffolds)
-
-    train_idx = int(len(scaffolds) * train_size)
-    test_idx = int(len(scaffolds) * (train_size + test_size))
-
-    train_scaffolds = scaffolds[:train_idx]
-    test_scaffolds = scaffolds[train_idx:test_idx]
-    val_scaffolds = scaffolds[test_idx:]
-
-    df_train = df[df['scaffold'].isin(train_scaffolds)].reset_index(drop=True)
-    df_test = df[df['scaffold'].isin(test_scaffolds)].reset_index(drop=True)
-    df_val = df[df['scaffold'].isin(val_scaffolds)].reset_index(drop=True)
-
-    print(f"\n📊 Data Split Results:")
-    print(f"  • Train: {len(df_train)} samples ({len(df_train)/len(df)*100:.1f}%)")
-    print(f"  • Test:  {len(df_test)} samples ({len(df_test)/len(df)*100:.1f}%)")
-    print(f"  • Val:   {len(df_val)} samples ({len(df_val)/len(df)*100:.1f}%)")
-
-    return df_train, df_test, df_val
-
-
-class ProteinEmbedder:
-    """Protein sequence embedder using ESM model"""
-    def __init__(self, config: dict):
+class FeatureEngineer:
+    def __init__(self, config):
+        """
+        Initializes the featurizer, loading the ESM-2 model.
+        """
         self.config = config
-        self.device = config['training']['device']
-        model_name = config['model']['protein_model_name']
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        
+        # Load ESM-2 Model and Tokenizer
+        # Using a smaller ESM-2 model for faster inference.
+        # For SOTA results, 'facebook/esm2_t33_650M_UR50D' is common.
+        esm_model_name = self.config.get('esm_model', 'facebook/esm2_t12_35M_UR50D')
+        
+        logger.info(f"Loading ESM-2 model: {esm_model_name}...")
+        try:
+            self.esm_tokenizer = EsmTokenizer.from_pretrained(esm_model_name)
+            self.esm_model = EsmModel.from_pretrained(esm_model_name).to(self.device)
+            self.esm_model.eval()  # Set to evaluation mode
+            logger.info("ESM-2 model loaded successfully.")
+        except Exception as e:
+            logger.error(f"Failed to load ESM-2 model: {e}")
+            raise
 
-        print(f"\n⏳ Loading ESM model: {model_name}")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = EsmModel.from_pretrained(model_name).to(self.device)
-        print(f"✓ Model loaded on {self.device}")
+    def _get_drug_graph(self, smiles_string: str) -> Data:
+        """
+        Converts a SMILES string into a 3D graph (Data object).
+        Generates 3D conformer and extracts atomic features and coordinates.
+        """
+        mol = Chem.MolFromSmiles(smiles_string)
+        if mol is None:
+            raise ValueError(f"RDKit failed to parse SMILES: {smiles_string}")
 
-        freeze_layers = config['model']['protein_freeze_layers']
-        print(f"\n🔒 Freezing embedding layer and first {freeze_layers} encoder layers...")
-        for param in self.model.embeddings.parameters(): param.requires_grad = False
-        for i in range(freeze_layers):
-            for param in self.model.encoder.layer[i].parameters(): param.requires_grad = False
-        self.model.eval()
+        mol = Chem.AddHs(mol)
+        
+        # Generate 3D conformer
+        status = AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
+        if status == -1:
+            logger.warning(f"Could not generate 3D conformer for {smiles_string}. Trying with random coords.")
+            status = AllChem.EmbedMolecule(mol, AllChem.ETKDGv3(useRandomCoords=True))
+            if status == -1:
+                 raise ValueError(f"Failed to generate 3D conformer even with random coords for {smiles_string}")
+        
+        try:
+            AllChem.MMFFOptimizeMolecule(mol)
+        except Exception as e:
+            logger.warning(f"MMFF optimization failed for {smiles_string}: {e}. Using unoptimized conformer.")
 
-    def embed(self, sequence: str) -> torch.Tensor:
-        """Generate embedding for protein sequence"""
-        tokens = self.tokenizer(
-            sequence,
-            return_tensors="pt",
-            padding="max_length",
-            truncation=True,
-            max_length=self.config['processing']['max_protein_length']
-        )
-        with torch.no_grad():
-            outputs = self.model(tokens.input_ids.to(self.device))
-        return outputs.last_hidden_state.mean(dim=1).squeeze(0)
+        conformer = mol.GetConformer()
+        positions = torch.tensor(conformer.GetPositions(), dtype=torch.float)
 
+        # Extract atomic features (e.g., atom type)
+        # This can be expanded (atomic_num, charge, is_aromatic, etc.)
+        atom_features = []
+        for atom in mol.GetAtoms():
+            atom_features.append(atom.GetAtomicNum())
+        
+        x = torch.tensor(atom_features, dtype=torch.long).view(-1, 1)
 
-def featurize_pair(smiles: str, sequence: str, config: dict, embedder: ProteinEmbedder) -> Optional[Dict[str, Any]]:
-    """Combine drug graph and protein embedding"""
-    graph = smiles_to_3d_graph(smiles, config)
-    if graph is None: return None
-    protein_emb = embedder.embed(sequence)
-    return {"graph": graph, "protein_emb": protein_emb}
+        # Extract edge index (bonds)
+        edge_list = []
+        for bond in mol.GetBonds():
+            i = bond.GetBeginAtomIdx()
+            j = bond.GetEndAtomIdx()
+            edge_list.extend([[i, j], [j, i]])
+        
+        edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
+        
+        # Create the PyG Data object
+        data = Data(x=x, edge_index=edge_index, pos=positions)
+        return data
 
+    @torch.no_grad()
+    def _get_protein_embedding(self, sequence: str) -> torch.Tensor:
+        """
+        Converts an amino acid sequence into a fixed-size embedding
+        using the ESM-2 model.
+        """
+        # Truncate sequence if it's too long for the model (e.g., >1022 tokens)
+        if len(sequence) > 1022:
+            sequence = sequence[:1022]
+            
+        tokens = self.esm_tokenizer(sequence, return_tensors='pt', add_special_tokens=True).to(self.device)
+        output = self.esm_model(**tokens)
+        
+        # Use mean pooling of the last hidden state to get a single vector
+        # for the entire protein.
+        # We ignore <cls> and <eos> tokens (indices 0 and -1)
+        embedding = output.last_hidden_state[0, 1:-1].mean(dim=0)
+        return embedding.cpu()
 
-class DTIDataset(Dataset):
-    """PyTorch Dataset for Drug-Target Interactions"""
-    def __init__(self, dataframe: pd.DataFrame, config: dict, embedder: ProteinEmbedder):
-        self.config = config
-        self.embedder = embedder
-        self.data = []
-
-        for _, row in tqdm(dataframe.iterrows(), total=len(dataframe), desc="Featurizing pairs"):
-            features = featurize_pair(row["smiles"], row["sequence"], config, embedder)
-            if features is not None:
-                features["label"] = row.get("label", 1)
-                features["gene_id"] = row.get("gene_id", "")
-                features["chem_id"] = row.get("chem_id", "")
-                self.data.append(features)
-
-        print(f"✓ Successfully featurized {len(self.data)}/{len(dataframe)} pairs")
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        return self.data[idx]
-
-
-def collate_fn(batch):
-    """Custom collate function for batching"""
-    batch = [item for item in batch if item is not None]
-    if not batch: return None
-
-    graphs = [item["graph"] for item in batch]
-    proteins = torch.stack([item["protein_emb"] for item in batch])
-    labels = torch.tensor([item["label"] for item in batch], dtype=torch.float)
-
-    return {
-        "graph": Batch.from_data_list(graphs),
-        "protein": proteins,
-        "labels": labels
-    }
+    def featurize(self, smiles: str, sequence: str) -> Data:
+        """
+        Main featurization function.
+        Combines the 3D drug graph and the ESM-2 protein embedding
+        into a single Data object.
+        """
+        # 1. Get 3D drug graph
+        drug_data = self._get_drug_graph(smiles)
+        
+        # 2. Get ESM-2 protein embedding
+        protein_embedding = self._get_protein_embedding(sequence)
+        
+        # 3. Store the protein embedding inside the drug's Data object
+        # This is a common PyG trick to keep pairs together in a batch
+        drug_data.protein_embedding = protein_embedding.unsqueeze(0) # Add batch dim
+        
+        return drug_data
