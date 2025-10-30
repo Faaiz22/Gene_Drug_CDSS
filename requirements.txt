@@ -1,39 +1,23 @@
-# --- Core ML & PyTorch ---
+# --- Core ML & DL ---
 torch
 torchvision
 torchaudio
 torch_geometric
 
-# --- Core Streamlit & AI ---
-streamlit==1.36.0
-langchain==0.2.6
-langchain-google-genai==1.0.7
+# --- Streamlit & Visualization ---
+streamlit
+py3Dmol
+ipywidgets  # Dependency for the local 3D viewer
+matplotlib
+plotly
 
-# --- Async & API Clients ---
-httpx==0.27.0
+# --- LLM / Agentic ---
+langchain
+langchain-google-genai
 
-# --- Scientific & Molecular ---
-rdkit==2025.3.6           # Use latest compatible version available
-transformers==4.42.3
-pandas==2.2.2
-numpy==1.26.4
-seaborn==0.13.2
-matplotlib==3.9.0
-scikit-learn==1.5.0
-biopython==1.84
-
-# --- Explainability ---
-captum==0.7.0
-
-# --- Visualization ---
-py3Dmol==2.1.0
-pillow==10.4.0
-plotly==5.22.0
-
-# --- Utilities ---
-requests==2.32.3
-PyYAML==6.0.1
-ipython==8.26.0
-tqdm==4.66.4
-
-ipywidgets
+# --- Data & Molecule Handling ---
+pandas
+rdkit
+PyYAML       # For 'import yaml'
+httpx
+transformers
