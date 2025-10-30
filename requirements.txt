@@ -1,8 +1,7 @@
 
--f https://www.google.com/search?q=https://data.pyg.org/whl/torch-2.2.0%2Bcpu.html
+-f https://data.pyg.org/whl/torch-2.2.0+cpu.html
 
-#--- Core ML & PyTorch ---
-
+# --- Core ML & PyTorch ---
 
 torch==2.2.0
 torchvision==0.17.0
