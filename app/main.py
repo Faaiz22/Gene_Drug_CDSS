@@ -1,6 +1,7 @@
 import streamlit as st
 from pathlib import Path
 import sys
+import os # Import os to set environment variables
 
 # --- Path and Import Handling ---
 SRC_PATH = str(Path(__file__).resolve().parents[1] / 'src')
@@ -22,58 +23,114 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Sidebar with health check and diagnostics
-st.sidebar.title("🔧 CDSS Diagnostics")
+# --- Sidebar ---
+st.sidebar.title("🔧 CDSS Diagnostics & Config")
+
+# --- Credential Input ---
+st.sidebar.header("Credentials (Required)")
+st.sidebar.info("These are required to load the processor and are not stored.")
+
+# Use st.session_state to hold the values
+if "pubmed_email" not in st.session_state:
+    st.session_state.pubmed_email = ""
+if "google_api_key" not in st.session_state:
+    st.session_state.google_api_key = ""
+
+st.session_state.pubmed_email = st.sidebar.text_input(
+    "PubMed Email (Required by NCBI)", 
+    value=st.session_state.pubmed_email,
+    help="NCBI requires an email for API access.",
+    type="password"
+)
+st.session_state.google_api_key = st.sidebar.text_input(
+    "Google API Key (Required for Agent)", 
+    value=st.session_state.google_api_key,
+    help="Google Generative AI key for the agent.",
+    type="password"
+)
+
+st.sidebar.markdown("---")
+st.sidebar.header("Status")
+
+# --- Caching Function ---
+# Note: We can't cache the processor if it depends on runtime env vars.
+# We will load it into session_state instead.
+def load_core_processor_once(config_path):
+    """
+    Loads the config and heavy CoreProcessor object.
+    This function is called by the button callback.
+    """
+    try:
+        st.info("Loading configuration...", icon="🔔")
+        # Config loading will now succeed because the env var is set
+        config = load_config(config_path)
+        st.info("Initializing Core Processor (this may take a moment)...", icon="📊")
+        processor = CoreProcessor(config)
+        st.success("Processor loaded.", icon="✅")
+        # Store the loaded processor and config in session_state
+        st.session_state["core_processor"] = processor
+        st.session_state["config"] = processor.config
+    except CDSSException as e:
+        st.error(f"Initialization Failed: {e.message}\nDetails: {e.details}")
+        st.session_state.pop("core_processor", None)
+    except FileNotFoundError:
+        st.error(f"Config file not found at `{config_path}`. Please check the path.")
+        st.session_state.pop("core_processor", None)
+    except Exception as e:
+        st.exception(e)
+        st.error(f"A critical error occurred during startup: {e}")
+        st.session_state.pop("core_processor", None)
+
+# --- Callback for the button ---
+def initialize_processor():
+    """
+    Sets environment variables from session_state and loads the processor.
+    """
+    if not st.session_state.pubmed_email:
+        st.sidebar.error("PubMed Email is required.")
+        return
+    if not st.session_state.google_api_key:
+        st.sidebar.error("Google API Key is required.")
+        return
+        
+    # --- THIS IS THE CRITICAL STEP ---
+    # Set environment variables for this session *before* loading config
+    os.environ["PUBMED_EMAIL"] = st.session_state.pubmed_email
+    os.environ["GOOGLE_API_KEY"] = st.session_state.google_api_key
+    
+    # Get config path from sidebar
+    config_path = st.session_state.get("config_path_input", "config/config.yaml")
+    
+    # Load the processor
+    load_core_processor_once(config_path)
+
+
+# --- Sidebar UI (continued) ---
 if "core_processor" in st.session_state:
     st.sidebar.success("Core Processor Loaded ✅")
 else:
     st.sidebar.warning("Processor not loaded ❌")
 
+st.sidebar.button("Load / Reload Processor", on_click=initialize_processor, type="primary")
+
 st.sidebar.markdown("---")
-config_path = st.sidebar.text_input("Config Path", value="config/config.yaml")
+st.sidebar.header("File Paths (Optional)")
+st.text_input("Config Path", value="config/config.yaml", key="config_path_input")
 image_path = st.sidebar.text_input("Architecture Image Path", value="app/assets/architecture.png")
 
-# --- Caching Function ---
-@st.cache_resource
-def load_core_processor(config_path=config_path):
-    """
-    Loads the config and heavy CoreProcessor object. Cached for the session.
-    """
-    try:
-        st.info("Loading configuration...", icon="🔔")
-        config = load_config(config_path)
-        st.info("Initializing Core Processor (this may take a moment)...", icon="📊")
-        processor = CoreProcessor(config)
-        st.success("Processor loaded.", icon="✅")
-        return processor
-    except CDSSException as e:
-        st.error(f"Initialization Failed: {e.message}\nDetails: {e.details}")
-        return None
-    except FileNotFoundError:
-        st.error(f"Config file not found at `{config_path}`. Please check the path in the sidebar.")
-        return None
-    except Exception as e:
-        st.exception(e)
-        st.error(f"A critical error occurred during startup: {e}")
-        return None
 
 # --- Main App Logic ---
 st.title("🧬 Gene-Drug Clinical Decision Support System (CDSS)")
 
-# Load processor (cached)
-processor = load_core_processor(config_path)
-
-if processor:
-    st.session_state["core_processor"] = processor
-    st.session_state["config"] = processor.config
-
+# The app is now gated by the processor in session_state
+if "core_processor" in st.session_state:
     st.markdown("""
     Welcome to the Gene-Drug CDSS. This tool uses a **state-of-the-art E(n)-Equivariant Graph Neural Network** and **Protein Language Model** to predict gene-drug interactions.
 
     **Select a tool from the sidebar to begin.**
     """)
 
-    # Architecture diagram (with robust handling)
+    # Architecture diagram
     img_path = Path(image_path)
     if img_path.is_file():
         st.image(str(img_path), caption="Model Architecture: EGNN and ESM-2 with Cross-Attention")
@@ -85,5 +142,6 @@ if processor:
         icon="⚠️"
     )
 else:
-    st.error("Application failed to load. Please check error messages and logs above or in the sidebar.")
+    st.error("Application failed to load.")
+    st.warning("Please enter your credentials in the sidebar and click 'Load Processor'.")
     st.stop()
