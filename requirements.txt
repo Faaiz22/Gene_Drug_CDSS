@@ -1,31 +1,35 @@
+python-version = "3.11"
+
 #--- Core ML & DL ---
-torch 
-torchvision 
-torchaudio 
-torch_geometric 
-scikit-learn 
-tqdm 
+
+torch
+torchvision
+torchaudio
+torch_geometric
+scikit-learn
+tqdm
 transformers
 
 #--- Streamlit & Viz ---
-streamlit 
-py3Dmol 
-ipywidgets 
-matplotlib 
-plotly 
+
+streamlit
+py3Dmol
+ipywidgets
+matplotlib
+plotly
 numpy
 
 #--- LLM / Agentic ---
 
-langchain 
-langchain_core 
-langchain_agents 
-langchain_google_genai 
-langchain_community
+
+langchain
+langchain-google-genai
+langchain-community
 
 #--- Data, Molecule & API Handling ---
-pandas 
-rdkit 
-PyYAML 
-httpx 
+
+pandas
+rdkit
+PyYAML
+httpx
 biopython
