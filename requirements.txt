@@ -1,5 +1,3 @@
-python-version = "3.11"
-
 #--- Core ML & DL ---
 
 torch
@@ -20,7 +18,6 @@ plotly
 numpy
 
 #--- LLM / Agentic ---
-
 
 langchain
 langchain-google-genai
