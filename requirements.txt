@@ -1,7 +1,7 @@
 
 -f https://www.google.com/search?q=https://data.pyg.org/whl/torch-2.2.0%2Bcpu.html
 
---- Core ML & PyTorch ---
+#--- Core ML & PyTorch ---
 
 
 torch==2.2.0
@@ -9,18 +9,18 @@ torchvision==0.17.0
 torchaudio==2.2.0
 torch_geometric==2.5.3 # This will now use the URL above to find its dependencies
 
---- Core Streamlit & AI ---
+#--- Core Streamlit & AI ---
 
 streamlit==1.36.0
 langchain==0.2.6
 langchain-google-genai==1.0.6
 google-generativeai==0.7.2
 
---- Async & API Clients ---
+#--- Async & API Clients ---
 
 httpx==0.27.0
 
---- Scientific & Molecular ---
+#--- Scientific & Molecular ---
 
 rdkit==2024.3.3
 transformers==4.42.3
@@ -31,18 +31,18 @@ matplotlib==3.9.0
 scikit-learn==1.5.0
 biopython==1.84
 
---- Explainability ---
+#--- Explainability ---
 
 captum==0.7.0
 
---- Visualization ---
+#--- Visualization ---
 
 py3Dmol==2.1.0
 stpy3mol==1.1.3
 pillow==10.4.0
 plotly==5.22.0
 
---- Utilities ---
+#--- Utilities ---
 
 requests==2.32.3
 PyYAML==6.0.1
