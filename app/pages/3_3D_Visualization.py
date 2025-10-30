@@ -1,6 +1,17 @@
 import streamlit as st
 from rdkit import Chem
 from typing import Optional
+import streamlit.components.v1 as components
+import py3Dmol
+import ipywidgets
+
+def showmol(mdl, height=500, width=500):
+  """
+  A simple wrapper to display a py3Dmol object in Streamlit.
+  """
+  mdl.this.params["height"] = height
+  mdl.this.params["width"] = width
+  components.html(mdl.this.html(), height=height, width=width)
 
 try:
     import py3Dmol
