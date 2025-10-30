@@ -23,3 +23,4 @@ rdkit
 PyYAML
 httpx
 biopython
+seaborn
