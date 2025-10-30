@@ -96,16 +96,16 @@ class DTIPredictor(nn.Module):
         """
         
         # --- 1. Process Drug ---
-        data.x shape: (num_atoms_in_batch, 1) - Atomic numbers
-        data.pos shape: (num_atoms_in_batch, 3) - XYZ coordinates
-        data.edge_index shape: (2, num_bonds_in_batch)
-        data.batch shape: (num_atoms_in_batch) - Maps atoms to graphs
+        # data.x shape: (num_atoms_in_batch, 1) - Atomic numbers
+        # data.pos shape: (num_atoms_in_batch, 3) - XYZ coordinates
+        # data.edge_index shape: (2, num_bonds_in_batch)
+        # data.batch shape: (num_atoms_in_batch) - Maps atoms to graphs
         
         # Get initial atom embeddings from atomic numbers
         atom_embeds = self.atom_embedding(data.x.squeeze()) # (num_atoms, hidden_dim)
 
         # Pass atom embeddings (h) and positions (x) through EGNN
-        h_out shape: (num_atoms, hidden_dim)
+        # h_out shape: (num_atoms, hidden_dim)
         h_out, _ = self.egnn(
             h=atom_embeds, 
             x=data.pos, 
@@ -115,16 +115,16 @@ class DTIPredictor(nn.Module):
         )
 
         # --- 2. Process Protein ---
-        data.protein_embedding shape: (batch_size, protein_emb_dim)
+        # data.protein_embedding shape: (batch_size, protein_emb_dim)
         protein_embed = self.protein_projection(data.protein_embedding)
-        protein_embed shape: (batch_size, hidden_dim)
+        # protein_embed shape: (batch_size, hidden_dim)
         
         # --- 3. Fuse with Cross-Attention ---
         # We want the protein to be the "context" for the drug atoms.
         
         # We need to map the batch-level protein embedding to the atom-level.
         # We "broadcast" the protein embedding to each atom in its respective graph.
-        protein_embed_per_atom shape: (num_atoms, hidden_dim)
+        # protein_embed_per_atom shape: (num_atoms, hidden_dim)
         protein_embed_per_atom = protein_embed[data.batch] 
 
         # Attention!
