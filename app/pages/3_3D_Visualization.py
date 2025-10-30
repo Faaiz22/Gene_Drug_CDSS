@@ -1,50 +1,80 @@
 import streamlit as st
 from rdkit import Chem
 from typing import Optional
-import streamlit.components.v1 as components
-import py3Dmol
-import ipywidgets
 
-def showmol(mdl, height=500, width=500):
-  """
-  A simple wrapper to display a py3Dmol object in Streamlit.
-  """
-  mdl.this.params["height"] = height
-  mdl.this.params["width"] = width
-  components.html(mdl.this.html(), height=height, width=width)
+def check_imports():
+    try:
+        import py3Dmol
+        from src.utils.stpy3mol_local import showmol
+        return py3Dmol, showmol
+    except ImportError as e:
+        st.error(
+            f"""Visualization libraries missing or cannot be loaded: {e}
+            \nPlease ensure py3Dmol is installed (`pip install py3Dmol`) and that `src/utils/stpy3mol_local.py` is available."""
+        )
+        return None, None
 
-try:
-    import py3Dmol
-    from src.utils.stpy3mol_local import showmol 
-except ImportError:
-    py3Dmol = None
-    showmol = None
+py3Dmol, showmol = check_imports()
 
-def render_3d_mol(mol: Chem.Mol, label: str = "molecule") -> None:
+def render_3d_mol(
+        mol: Chem.Mol, 
+        label: str = "molecule", 
+        style: str = "stick",
+        bg_color: str = "white",
+        width: int = 600, 
+        height: int = 400
+    ) -> None:
     """
     Renders an RDKit molecule object in 3D using py3Dmol within Streamlit.
+
+    Args:
+        mol (Chem.Mol): The RDKit molecule object.
+        label (str): Label for conformer.
+        style (str): Rendering style: stick, line, spheres, cartoon, ribbon.
+        bg_color (str): Background color for the viewer.
+        width (int): Viewer width.
+        height (int): Viewer height.
     """
     if py3Dmol is None or showmol is None:
-        st.error("Visualization libraries not found. Please run: pip install py3Dmol stpy3mol")
+        st.warning("Unable to visualize: py3Dmol or showmol missing.")
+        return
+
+    if mol is None or mol.GetNumAtoms() == 0:
+        st.error("Invalid or empty molecule provided.")
         return
 
     # Convert RDKit mol to PDB block
     try:
         pdb_block = Chem.MolToPDBBlock(mol)
+        if not pdb_block.strip():
+            st.error("Failed to generate PDB block. Molecule may be invalid or lack 3D coordinates.")
+            return
     except Exception as e:
         st.error(f"Failed to convert molecule to PDB format: {e}")
         return
-
+    
+    # Set style dict for py3Dmol
+    styles_dict = {
+        "stick": {'stick': {}},
+        "line": {'line': {}},
+        "sphere": {'sphere': {}},
+        "cartoon": {'cartoon': {}},
+        "ribbon": {'ribbon': {}}
+    }
+    style_chosen = styles_dict.get(style, {'stick': {}})
+    
     # Create py3Dmol view
-    view = py3Dmol.view(width=600, height=400)
+    view = py3Dmol.view(width=width, height=height)
+    view.setBackgroundColor(bg_color)
     view.addModel(pdb_block, 'pdb')
-    view.setStyle({'stick': {}})
+    view.setStyle(style_chosen)
     view.zoomTo()
-    view.setClickable({'atom': True, 'bond': False}, True, f"javascript:alert('Atom: ' + atom.atom + ' ' + atom.resi + ' ' + atom.resn)")
-
+    # Interactive atom label
+    view.setClickable({'atom': True, 'bond': False}, True, "javascript:alert('Atom: ' + atom.atom + ' Residue: ' + atom.resi + ' Name: ' + atom.resn);")
+    
     # Show in Streamlit
-    st.write(f"**3D Conformer: {label}**")
-    showmol(view, height=400, width=600)
+    st.write(f"**3D Conformer: {label}** (style: `{style}`)")
+    showmol(view, height=height, width=width)
 
-# You can add more complex visualization functions here later,
-# for example, to show the protein-ligand complex.
+# Example usage:
+# render_3d_mol(mol, label="Caffeine", style="stick", bg_color="white")
