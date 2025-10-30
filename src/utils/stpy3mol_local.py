@@ -1,6 +1,6 @@
 import streamlit.components.v1 as components
 import py3Dmol
-import ipywidgets # This is a dependency, make sure it's in requirements.txt
+import ipywidgets
 
 def showmol(mdl, height=500, width=500):
   """
