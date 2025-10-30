@@ -10,23 +10,39 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from src.agent.agent_orchestrator import DTIAgentOrchestrator
-from src.core_processing import load_config
+# We no longer need load_config here, main.py handles it
+# from src.core_processing import load_config 
 
 st.set_page_config(
     page_title="Single Prediction - Agentic CDSS",
     page_icon="🎯",
     layout="wide"
 )
+
 @st.cache_resource
 def get_agent():
-    config = load_config()
-    try:
-        # THIS IS THE "UPTAKE" LINE for the Google API Key
-        api_key = st.secrets["GOOGLE_API_KEY"]
-    except:
-        api_key = None
+    # --- Check if processor is loaded ---
+    if "core_processor" not in st.session_state:
+        st.error("Core processor not loaded. Please go to the 'CDSS Diagnostics' page, enter credentials, and click 'Load Processor'.")
+        st.stop()
+        
+    # --- Check if API key is in session_state ---
+    if "google_api_key" not in st.session_state or not st.session_state.google_api_key:
+        st.error("Google API Key not provided. Please enter it on the main 'CDSS Diagnostics' page.")
+        st.stop()
+
+    # --- Get config and API key from session_state (put there by main.py) ---
+    config = st.session_state.config
+    api_key = st.session_state.google_api_key
     
-    return DTIAgentOrchestrator(config, api_key=api_key)
+    try:
+        # Pass the key directly. The orchestrator's __init__ will handle it.
+        return DTIAgentOrchestrator(config, api_key=api_key)
+    except Exception as e:
+        st.error(f"💥 Failed to initialize agent. This may be due to an invalid Google API Key.")
+        st.exception(e)
+        st.stop()
+
 
 st.title("🎯 Agentic Drug-Gene Interaction Analysis")
 st.markdown("""
@@ -37,6 +53,13 @@ This advanced system uses an **autonomous AI agent** to:
 - 📚 Search PubMed for supporting research
 - 📋 Generate comprehensive clinical reports
 """)
+
+# Check for processor again before showing UI
+if "core_processor" not in st.session_state:
+    st.info("Waiting for Core Processor to be loaded on the main page...")
+    st.stop()
+
+# --- (Rest of the file is unchanged) ---
 
 # Sidebar for analysis options
 with st.sidebar:
