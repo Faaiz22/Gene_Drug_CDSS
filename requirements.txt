@@ -1,23 +1,31 @@
-# --- Core ML & DL ---
+#--- Core ML & DL ---
+
 torch
 torchvision
 torchaudio
 torch_geometric
+scikit-learn
+tqdm
+transformers
 
-# --- Streamlit & Visualization ---
+#--- Streamlit & Visualization ---
+
 streamlit
 py3Dmol
-ipywidgets  # Dependency for the local 3D viewer
+ipywidgets
 matplotlib
 plotly
+numpy
 
-# --- LLM / Agentic ---
+#--- LLM / Agentic ---
+
 langchain
 langchain-google-genai
 
-# --- Data & Molecule Handling ---
+#--- Data, Molecule & API Handling ---
+
 pandas
 rdkit
-PyYAML       # For 'import yaml'
+PyYAML
 httpx
-transformers
+biopython
