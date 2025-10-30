@@ -3,10 +3,10 @@
 
 # --- Core ML & PyTorch ---
 
-torch==2.2.0
-torchvision==0.17.0
-torchaudio==2.2.0
-torch_geometric==2.5.3 # This will now use the URL above to find its dependencies
+torch
+torchvision
+torchaudio
+torch_geometric # This will now use the URL above to find its dependencies
 
 #--- Core Streamlit & AI ---
 
