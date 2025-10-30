@@ -24,10 +24,16 @@ st.set_page_config(
     layout="wide"
 )
 
+# Check for processor first
+if "core_processor" not in st.session_state:
+    st.error("Core processor not loaded. Please go to the 'CDSS Diagnostics' page, enter credentials, and click 'Load Processor'.")
+    st.stop()
+    
 # Initialize cached resources
 @st.cache_resource
 def get_pubmed_client():
-    config = load_config()
+    # Config is loaded by main.py and stored in session_state
+    config = st.session_state.config
     return PubMedClient(config)
 
 # Title and description
@@ -95,7 +101,10 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ===== TAB 1: SEARCH =====
 with tab1:
     st.header("Search PubMed")
-    search_query = None
+    
+    # --- FIX ---
+    # Initialize search_query to None to prevent NameError
+    search_query = None 
     
     search_mode = st.radio(
         "Search Mode",
@@ -126,7 +135,7 @@ with tab1:
             help="Narrow search to specific interaction types"
         )
         
-        search_query = None
+        # search_query = None # <-- This was the old position, moved up
         if st.button("🔍 Search Literature", type="primary", use_container_width=True):
             if drug_name and gene_name:
                 search_query = (drug_name, gene_name, 
@@ -181,6 +190,7 @@ with tab1:
                     ))
                 else:
                     # Implement custom search logic
+                    st.warning("Custom query, gene-centric, and drug-centric searches are not fully implemented in this demo.")
                     papers = []
                 
                 if papers:
@@ -190,7 +200,7 @@ with tab1:
                     st.session_state.papers = papers
                     st.session_state.search_stats = {
                         'total': len(papers),
-                        'avg_year': sum(int(p['year']) for p in papers if p['year'].isdigit()) / len(papers),
+                        'avg_year': sum(int(p['year']) for p in papers if p['year'].isdigit()) / len(papers) if len(papers) > 0 else "N/A",
                         'unique_journals': len(set(p['journal'] for p in papers))
                     }
                     
@@ -219,8 +229,8 @@ with tab1:
                             
                             col_a, col_b, col_c = st.columns([1, 1, 2])
                             with col_a:
-                                if st.button(f"🔗 View on PubMed", key=f"pubmed_{i}"):
-                                    st.markdown(f"[Open in new tab]({paper['url']})")
+                                if paper.get('url'):
+                                    st.link_button("🔗 View on PubMed", url=paper['url'], key=f"pubmed_{i}")
                             
                             with col_b:
                                 if st.button(f"📋 Copy Citation", key=f"cite_{i}"):
@@ -231,8 +241,12 @@ with tab1:
                                 if st.button(f"💾 Save to Report", key=f"save_{i}"):
                                     if 'saved_papers' not in st.session_state:
                                         st.session_state.saved_papers = []
-                                    st.session_state.saved_papers.append(paper)
-                                    st.success("Added to report!")
+                                    # Avoid duplicates
+                                    if not any(p['pmid'] == paper['pmid'] for p in st.session_state.saved_papers):
+                                        st.session_state.saved_papers.append(paper)
+                                        st.success("Added to report!")
+                                    else:
+                                        st.info("Already added.")
                     
                     # Download results
                     st.markdown("---")
@@ -258,6 +272,9 @@ with tab1:
             
             except Exception as e:
                 st.error(f"Search failed: {str(e)}")
+                st.exception(e)
+
+# --- (Rest of the file is unchanged) ---
 
 # ===== TAB 2: TRENDS ANALYSIS =====
 with tab2:
@@ -269,37 +286,42 @@ with tab2:
         # Year distribution
         st.subheader("Publication Timeline")
         
-        year_counts = pd.DataFrame([
-            {'Year': int(p['year']), 'Count': 1} 
-            for p in papers if p['year'].isdigit()
-        ]).groupby('Year').count().reset_index()
-        
-        fig_timeline = px.line(
-            year_counts,
-            x='Year',
-            y='Count',
-            title='Publications Over Time',
-            markers=True
-        )
-        fig_timeline.update_traces(line_color='#FF4B4B')
-        st.plotly_chart(fig_timeline, use_container_width=True)
+        year_data = [int(p['year']) for p in papers if p['year'].isdigit()]
+        if year_data:
+            year_counts = pd.DataFrame(year_data, columns=['Year']).value_counts('Year').sort_index().reset_index(name='Count')
+            
+            fig_timeline = px.line(
+                year_counts,
+                x='Year',
+                y='Count',
+                title='Publications Over Time',
+                markers=True
+            )
+            fig_timeline.update_traces(line_color='#FF4B4B')
+            st.plotly_chart(fig_timeline, use_container_width=True)
+        else:
+            st.info("No publication year data available for timeline chart.")
+
         
         # Journal distribution
         st.subheader("Top Publishing Journals")
         
-        journal_counts = pd.DataFrame([
-            {'Journal': p['journal'], 'Count': 1}
-            for p in papers
-        ]).groupby('Journal').count().reset_index().sort_values('Count', ascending=False).head(10)
-        
-        fig_journals = px.bar(
-            journal_counts,
-            x='Count',
-            y='Journal',
-            orientation='h',
-            title='Publications by Journal (Top 10)'
-        )
-        st.plotly_chart(fig_journals, use_container_width=True)
+        journal_data = [p['journal'] for p in papers if p['journal']]
+        if journal_data:
+            journal_counts = pd.Series(journal_data).value_counts().reset_index(name='Count').head(10)
+            journal_counts.columns = ['Journal', 'Count']
+
+            fig_journals = px.bar(
+                journal_counts.sort_values('Count', ascending=True),
+                x='Count',
+                y='Journal',
+                orientation='h',
+                title='Publications by Journal (Top 10)'
+            )
+            st.plotly_chart(fig_journals, use_container_width=True)
+        else:
+            st.info("No journal data available.")
+
         
         # Author network (simplified)
         st.subheader("Collaborative Network")
@@ -308,30 +330,39 @@ with tab2:
         for p in papers:
             all_authors.extend(p['authors'][:3])  # Top 3 authors per paper
         
-        author_counts = pd.Series(all_authors).value_counts().head(15)
-        
-        fig_authors = px.bar(
-            x=author_counts.values,
-            y=author_counts.index,
-            orientation='h',
-            title='Most Prolific Authors',
-            labels={'x': 'Publications', 'y': 'Author'}
-        )
-        st.plotly_chart(fig_authors, use_container_width=True)
+        if all_authors:
+            author_counts = pd.Series(all_authors).value_counts().head(15)
+            
+            fig_authors = px.bar(
+                author_counts.sort_values(ascending=False),
+                x=author_counts.values,
+                y=author_counts.index,
+                orientation='h',
+                title='Most Prolific Authors',
+                labels={'x': 'Publications', 'y': 'Author'}
+            )
+            st.plotly_chart(fig_authors, use_container_width=True)
+        else:
+            st.info("No author data available.")
+
         
         # Research growth metrics
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            recent_papers = sum(1 for p in papers if int(p['year']) >= 2020)
+            recent_papers = sum(1 for p in papers if p['year'].isdigit() and int(p['year']) >= 2020)
             st.metric("Papers (2020+)", recent_papers)
         
         with col2:
-            avg_year = sum(int(p['year']) for p in papers if p['year'].isdigit()) / len(papers)
-            st.metric("Avg. Publication Year", f"{avg_year:.1f}")
+            if year_data:
+                avg_year = sum(year_data) / len(year_data)
+                st.metric("Avg. Publication Year", f"{avg_year:.1f}")
+            else:
+                st.metric("Avg. Publication Year", "N/A")
+
         
         with col3:
-            unique_journals = len(set(p['journal'] for p in papers))
+            unique_journals = len(set(p['journal'] for p in papers if p['journal']))
             st.metric("Unique Journals", unique_journals)
     
     else:
@@ -378,15 +409,15 @@ with tab4:
             
             report_format = st.selectbox(
                 "Output Format",
-                ["Markdown", "PDF", "Word Document", "HTML"]
+                ["Markdown", "PDF (Coming Soon)", "Word Document (Coming Soon)", "HTML (Coming Soon)"]
             )
         
         with col2:
             include_abstracts = st.checkbox("Include Abstracts", value=True)
-            include_methods = st.checkbox("Include Methods Section", value=False)
+            include_methods = st.checkbox("Include Methods Section (Coming Soon)", value=False)
             citation_style = st.selectbox(
                 "Citation Style",
-                ["APA", "MLA", "Chicago", "Vancouver"]
+                ["APA", "MLA (Coming Soon)", "Chicago (Coming Soon)", "Vancouver (Coming Soon)"]
             )
         
         # Generate report
@@ -399,10 +430,12 @@ with tab4:
                 report += "---\n\n"
                 
                 report += "## Summary\n\n"
+                report_years = [int(p['year']) for p in saved_papers if p['year'].isdigit()]
                 report += f"This literature review encompasses {len(saved_papers)} peer-reviewed publications "
-                report += f"spanning from {min(p['year'] for p in saved_papers)} to {max(p['year'] for p in saved_papers)}. "
+                if report_years:
+                     report += f"spanning from {min(report_years)} to {max(report_years)}. "
                 
-                unique_journals = len(set(p['journal'] for p in saved_papers))
+                unique_journals = len(set(p['journal'] for p in saved_papers if p['journal']))
                 report += f"The papers were published across {unique_journals} different journals.\n\n"
                 
                 report += "## Papers Reviewed\n\n"
@@ -424,7 +457,7 @@ with tab4:
                 report += "## References\n\n"
                 client = get_pubmed_client()
                 for i, paper in enumerate(saved_papers, 1):
-                    citation = client.format_citation(paper)
+                    citation = client.format_citation(paper) # Assuming APA style for now
                     report += f"{i}. {citation}\n\n"
                 
                 # Display and download
@@ -432,7 +465,7 @@ with tab4:
                 st.markdown(report)
                 
                 st.download_button(
-                    label="📥 Download Report",
+                    label="📥 Download Report (Markdown)",
                     data=report.encode('utf-8'),
                     file_name=f"literature_review_{datetime.now().strftime('%Y%m%d')}.md",
                     mime="text/markdown"
