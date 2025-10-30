@@ -33,6 +33,8 @@ st.sidebar.info("These are required to load the processor and are not stored.")
 # Use st.session_state to hold the values
 if "pubmed_email" not in st.session_state:
     st.session_state.pubmed_email = ""
+if "pubmed_api_key" not in st.session_state: # <-- NEW
+    st.session_state.pubmed_api_key = ""
 if "google_api_key" not in st.session_state:
     st.session_state.google_api_key = ""
 
@@ -42,6 +44,16 @@ st.session_state.pubmed_email = st.sidebar.text_input(
     help="NCBI requires an email for API access.",
     type="password"
 )
+
+# --- NEW FIELD ---
+st.session_state.pubmed_api_key = st.sidebar.text_input(
+    "PubMed API Key (Optional, for higher rate)", 
+    value=st.session_state.pubmed_api_key,
+    help="NCBI API Key for higher request volumes.",
+    type="password"
+)
+# --- END NEW FIELD ---
+
 st.session_state.google_api_key = st.sidebar.text_input(
     "Google API Key (Required for Agent)", 
     value=st.session_state.google_api_key,
@@ -53,8 +65,7 @@ st.sidebar.markdown("---")
 st.sidebar.header("Status")
 
 # --- Caching Function ---
-# Note: We can't cache the processor if it depends on runtime env vars.
-# We will load it into session_state instead.
+# (This remains in session_state, not cache, which is correct)
 def load_core_processor_once(config_path):
     """
     Loads the config and heavy CoreProcessor object.
@@ -86,6 +97,7 @@ def initialize_processor():
     """
     Sets environment variables from session_state and loads the processor.
     """
+    # Required fields
     if not st.session_state.pubmed_email:
         st.sidebar.error("PubMed Email is required.")
         return
@@ -97,6 +109,13 @@ def initialize_processor():
     # Set environment variables for this session *before* loading config
     os.environ["PUBMED_EMAIL"] = st.session_state.pubmed_email
     os.environ["GOOGLE_API_KEY"] = st.session_state.google_api_key
+    
+    # --- NEWLY ADDED ---
+    # Set the PubMed API Key if provided.
+    # This allows the config_loader to pick it up.
+    if st.session_state.pubmed_api_key:
+        os.environ["PUBMED_API_KEY"] = st.session_state.pubmed_api_key
+    # --- END NEWLY ADDED ---
     
     # Get config path from sidebar
     config_path = st.session_state.get("config_path_input", "config/config.yaml")
@@ -145,3 +164,4 @@ else:
     st.error("Application failed to load.")
     st.warning("Please enter your credentials in the sidebar and click 'Load Processor'.")
     st.stop()
+
