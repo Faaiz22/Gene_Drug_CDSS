@@ -4,7 +4,7 @@ from typing import Optional
 
 try:
     import py3Dmol
-    from stpy3mol import showmol
+    from src.utils.stpy3mol_local import showmol 
 except ImportError:
     py3Dmol = None
     showmol = None
