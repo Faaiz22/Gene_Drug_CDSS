@@ -17,16 +17,15 @@ st.set_page_config(
     page_icon="🎯",
     layout="wide"
 )
-
-# Initialize agent (cached)
 @st.cache_resource
 def get_agent():
     config = load_config()
-    # Try to get API key from secrets, fallback to config
     try:
+        # THIS IS THE "UPTAKE" LINE for the Google API Key
         api_key = st.secrets["GOOGLE_API_KEY"]
     except:
         api_key = None
+    
     return DTIAgentOrchestrator(config, api_key=api_key)
 
 st.title("🎯 Agentic Drug-Gene Interaction Analysis")
