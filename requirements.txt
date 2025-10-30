@@ -1,4 +1,3 @@
-
 torch
 torchvision
 torchaudio
@@ -18,9 +17,10 @@ langchain
 langchain-google-genai
 langchain-community
 
+seaborn          
+
 pandas
 rdkit
 PyYAML
 httpx
 biopython
-seaborn
