@@ -1,5 +1,3 @@
-#--- Core ML & DL ---
-
 torch
 torchvision
 torchaudio
@@ -8,7 +6,6 @@ scikit-learn
 tqdm
 transformers
 
-#--- Streamlit & Viz ---
 
 streamlit
 py3Dmol
@@ -17,13 +14,10 @@ matplotlib
 plotly
 numpy
 
-#--- LLM / Agentic ---
-
 langchain
+langchain-agents
 langchain-google-genai
 langchain-community
-
-#--- Data, Molecule & API Handling ---
 
 pandas
 rdkit
