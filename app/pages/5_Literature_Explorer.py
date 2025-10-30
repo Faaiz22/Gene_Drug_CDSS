@@ -95,6 +95,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # ===== TAB 1: SEARCH =====
 with tab1:
     st.header("Search PubMed")
+    search_query = None
     
     search_mode = st.radio(
         "Search Mode",
