@@ -15,7 +15,6 @@ plotly
 numpy
 
 langchain
-langchain-agents
 langchain-google-genai
 langchain-community
 
