@@ -1,7 +1,30 @@
 import streamlit as st
+import sys
+from pathlib import Path
 import pandas as pd
 from src.utils.validators import validate_batch_dataframe
 from src.utils.exceptions import CDSSException
+
+# Add project root to path
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SRC_PATH = PROJECT_ROOT / 'src'
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+# Import CDSS modules
+try:
+    from agent.agent_orchestrator import DTIAgentOrchestrator
+    from utils.exceptions import CDSSException
+except ImportError as e:
+    st.error(f"Failed to import required modules: {e}")
+    st.error("Please ensure all dependencies are installed and the system is properly initialized.")
+    st.stop()
+
+st.set_page_config(
+    page_title="Batch Analysis - Agentic CDSS",
+    page_icon="🎯",
+    layout="wide"
+)
 
 # Set up the Streamlit page
 st.set_page_config(page_title="Batch DTI Analysis", layout="wide")
