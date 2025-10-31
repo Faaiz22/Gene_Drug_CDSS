@@ -1,6 +1,29 @@
 import streamlit as st
 from rdkit import Chem
 from typing import Optional
+import sys
+from pathlib import Path
+
+# Add project root to path (same pattern as main.py)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SRC_PATH = PROJECT_ROOT / 'src'
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+# NOW import CDSS modules (using absolute imports)
+try:
+    from agent.agent_orchestrator import DTIAgentOrchestrator
+    from utils.exceptions import CDSSException
+except ImportError as e:
+    st.error(f"Failed to import required modules: {e}")
+    st.error("Please ensure all dependencies are installed and the system is properly initialized.")
+    st.stop()
+
+st.set_page_config(
+    page_title="3D Visualization - Agentic CDSS",
+    page_icon="🎯",
+    layout="wide"
+)
 
 def check_imports():
     try:
