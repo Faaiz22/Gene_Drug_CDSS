@@ -139,7 +139,7 @@ Action: the tool to use (one of [{tool_names}])
 Action Input: the input to the tool
 Observation: the result of the tool
 ... (repeat Thought/Action/Action Input/Observation as needed)
-Thought: I now have enough information to provide a final answer
+Thought: I now have all the information I need to provide a final answer
 Final Answer: the final response to the user
 
 Begin your analysis!
@@ -163,7 +163,10 @@ User Query: {input}
         
         executor = AgentExecutor(
             agent=agent,
-            tools=AGENTIC_TOOLS,  # FIXED TYPO: was AGENTENTIC_TOOLS
+            # ==================================================================
+            # CORRECTED TYPO: Was AGENTENTIC_TOOLS
+            # ==================================================================
+            tools=AGENTIC_TOOLS,
             verbose=True,
             handle_parsing_errors=True,
             max_iterations=max_iterations,
