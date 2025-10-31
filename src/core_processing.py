@@ -19,7 +19,10 @@ from utils.config_loader import load_config
 from utils.exceptions import CDSSException, DataFetchException, ModelException
 from utils.api_clients import PubChemClient, UniProtClient
 from utils.pubmed_client import PubMedClient
-from models.dti_model import DTIPredictor
+# ==================================================================
+# CORRECTED IMPORT: Changed DTIPredictor to DTIModel
+# ==================================================================
+from models.dti_model import DTIModel
 from preprocessing.feature_engineer import FeatureEngineer
 
 logger = logging.getLogger(__name__)
@@ -98,22 +101,19 @@ class CoreProcessor:
         # Get model hyperparameters from config
         params = model_config.get('hyperparameters', {})
         
-        # Instantiate model with parameters from config
-        # This must match your model's __init__ signature
+      
         try:
-            model = DTIPredictor(
-                protein_emb_dim=params.get('protein_emb_dim', 1280),
-                drug_emb_dim=params.get('drug_emb_dim', 128),
-                egnn_hidden_dim=params.get('egnn_hidden_dim', 128),
-                # Add any other required model parameters here
-            )
+         
+            model = DTIModel(self.config) 
+            
+                
         except TypeError as e:
             raise ModelException(
-                f"Model hyperparameter mismatch. Config keys may not match DTIPredictor __init__ args: {e}",
-                "Check config.yaml > model > hyperparameters"
+                f"Model hyperparameter mismatch. Config keys may not match DTIModel __init__ args: {e}",
+                "Check config.yaml > model > hyperparameters and DTIModel.__init__"
             )
         except ImportError:
-            raise ModelException("Failed to import 'DTIPredictor' from 'models.dti_model'.", "Check the file and class name.")
+            raise ModelException("Failed to import 'DTIModel' from 'models.dti_model'.", "Check the file and class name.")
 
         # Load the saved weights (state dictionary)
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -169,10 +169,13 @@ class CoreProcessor:
             sequence = self.get_sequence_sync(gene_id)
             
             # 2. Featurize
+            # Note: The 'feature_engineer' is not fully defined in the provided files
+            # This assumes it has a 'featurize' method that returns a PyG data object
             data = self.feature_engineer.featurize(smiles, sequence)
             
             # 3. Move to device
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # This assumes 'data' is a PyG object with a .to() method
             data = data.to(device)
             return data
             
@@ -187,27 +190,31 @@ class CoreProcessor:
         try:
             # 1. Featurize
             logger.debug("Featurizing inputs...")
-            data = self.feature_engineer.featurize(smiles, sequence)
+            # This assumes featurize returns a PyG Batch-like object
+            # Your DTIModel.forward expects (drug_graph, protein_embedding)
+            # This 'featurize' method may need to be different
+            
+            # Based on DTIModel.forward, we need two separate inputs
+            # Your FeatureEngineer class should handle this
+            drug_graph, protein_embedding = self.feature_engineer.featurize(smiles, sequence)
             
             # 2. Move to device
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            data = data.to(device)
+            drug_graph = drug_graph.to(device)
+            protein_embedding = protein_embedding.to(device)
+
+            # Ensure protein_embedding is correctly batched (e.g., [1, embed_dim])
+            if protein_embedding.dim() == 1:
+                protein_embedding = protein_embedding.unsqueeze(0)
             
             # 3. Predict
             logger.debug("Running model prediction...")
             with torch.no_grad():
-                output = self.model(data)  # Model's forward pass
+                # Pass both arguments to the model's forward method
+                logits, _ = self.model(drug_graph, protein_embedding)
             
             # 4. Post-process output
-            # This logic assumes the model output needs sigmoid (binary classification)
-            if output.dim() > 1 and output.shape[1] == 2:
-                # Binary classification logits [batch_size, 2]
-                prob = torch.softmax(output, dim=1)[0][1].item() # Prob of class 1 (binds)
-            elif output.dim() == 1 or output.shape[1] == 1:
-                # Single logit or probability [batch_size, 1]
-                prob = torch.sigmoid(output)[0].item()
-            else:
-                raise ModelException(f"Unexpected model output shape: {output.shape}")
+            prob = torch.sigmoid(logits)[0].item()
 
             threshold = self.config.get('model', {}).get('threshold', 0.5)
             prediction = 1 if prob > threshold else 0
@@ -222,5 +229,5 @@ class CoreProcessor:
             
         except Exception as e:
             logger.error(f"Model prediction pipeline failed: {e}", exc_info=True)
-            raise ModelException("Model prediction failed", str(e))
-
+            # This logic might need refinement based on your FeatureEngineer
+            raise ModelException("Model prediction failed. Check featurization and model forward pass.", str(e))
