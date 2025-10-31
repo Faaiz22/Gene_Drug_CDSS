@@ -11,16 +11,32 @@ from typing import List, Dict
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+"""
+Enhanced Single Prediction Page with Agentic Analysis.
+"""
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+import streamlit as st
+import sys
+from pathlib import Path
 
-from src.utils.pubmed_client import PubMedClient
-from src.core_processing import load_config
+# Add project root to path (same pattern as main.py)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SRC_PATH = PROJECT_ROOT / 'src'
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+# NOW import CDSS modules (using absolute imports)
+try:
+    from agent.agent_orchestrator import DTIAgentOrchestrator
+    from utils.exceptions import CDSSException
+except ImportError as e:
+    st.error(f"Failed to import required modules: {e}")
+    st.error("Please ensure all dependencies are installed and the system is properly initialized.")
+    st.stop()
 
 st.set_page_config(
-    page_title="Literature Explorer - Drug-Gene CDSS",
-    page_icon="📚",
+    page_title="Literature explorer - Agentic CDSS",
+    page_icon="🎯",
     layout="wide"
 )
 
