@@ -4,6 +4,9 @@ CoreProcessor: The central engine for the CDSS.
 This class orchestrates data fetching, preprocessing, and model inference.
 It is initialized once and stored in the Streamlit session state.
 """
+"""
+CoreProcessor: The central engine for the CDSS.
+"""
 
 import torch
 import asyncio
@@ -11,16 +14,13 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-# --- Module Imports ---
-# Import utility functions and classes
-from .utils.config_loader import load_config  # Expose for other pages
-from .utils.exceptions import CDSSException, DataFetchException, ModelException
-from .utils.api_clients import PubChemClient, UniProtClient
-from .utils.pubmed_client import PubMedClient
-
-# Import core ML components
-from .models.dti_model import DTIPredictor # Assuming this is the main model class
-from .preprocessing.feature_engineer import FeatureEngineer
+# ABSOLUTE IMPORTS (no dots)
+from utils.config_loader import load_config
+from utils.exceptions import CDSSException, DataFetchException, ModelException
+from utils.api_clients import PubChemClient, UniProtClient
+from utils.pubmed_client import PubMedClient
+from models.dti_model import DTIPredictor
+from preprocessing.feature_engineer import FeatureEngineer
 
 logger = logging.getLogger(__name__)
 
