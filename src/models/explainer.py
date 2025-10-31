@@ -16,7 +16,7 @@ from captum.attr import IntegratedGradients
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import logging
 
-from .dti_model import DTIModel
+from dti_model import DTIModel
 
 logger = logging.getLogger(__name__)
 
