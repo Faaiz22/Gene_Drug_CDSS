@@ -5,35 +5,37 @@ import pandas as pd
 from src.utils.validators import validate_batch_dataframe
 from src.utils.exceptions import CDSSException
 
-# Add project root to path
+
+# Path setup (same as before)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC_PATH = PROJECT_ROOT / 'src'
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-# Import CDSS modules
-try:
-    from agent.agent_orchestrator import DTIAgentOrchestrator
-    from utils.exceptions import CDSSException
-except ImportError as e:
-    st.error(f"Failed to import required modules: {e}")
-    st.error("Please ensure all dependencies are installed and the system is properly initialized.")
-    st.stop()
+from utils.validators import validate_batch_dataframe
+from utils.exceptions import CDSSException
 
-st.set_page_config(
-    page_title="Batch Analysis - Agentic CDSS",
-    page_icon="🎯",
-    layout="wide"
-)
-
-# Set up the Streamlit page
-st.set_page_config(page_title="Batch DTI Analysis", layout="wide")
+st.set_page_config(page_title="Batch DTI Analysis", layout="wide", page_icon="🧪")
 st.title("🧪 Batch DTI Analysis")
 st.markdown("Upload a CSV/Excel file with `gene_id` and `chem_id` columns to run predictions in bulk.")
 
-# Check if core_processor is initialized in session state
+# ROBUST CHECK for core_processor
 if "core_processor" not in st.session_state:
-    st.error("Core processor not initialized. Please return to the main page.")
+    st.error(
+        "⚠️ **Core processor not initialized**\n\n"
+        "Please go to the **main page** (Home), enter your API credentials, "
+        "and click '**Initialize System**' before using batch analysis.",
+        icon="🔐"
+    )
+    st.info(
+        "**Why is this needed?**\n\n"
+        "The batch analysis tool requires:\n"
+        "- Loaded machine learning models\n"
+        "- API credentials for data fetching\n"
+        "- Initialized feature engineering pipeline\n\n"
+        "All of these are set up on the main page.",
+        icon="💡"
+    )
     st.stop()
 
 core_processor = st.session_state.core_processor
