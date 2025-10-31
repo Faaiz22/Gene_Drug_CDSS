@@ -2,20 +2,16 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import sys
 from pathlib import Path
-"""
-Enhanced Single Prediction Page with Agentic Analysis.
-"""
-
-import streamlit as st
-import sys
-from pathlib import Path
 
 # Add project root to path (same pattern as main.py)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC_PATH = PROJECT_ROOT / 'src'
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
-
+    
+# Absolute imports (NO dots!)
+from utils.module_name import ClassName
+from core_processing import CoreProcessor
 # NOW import CDSS modules (using absolute imports)
 try:
     from agent.agent_orchestrator import DTIAgentOrchestrator
