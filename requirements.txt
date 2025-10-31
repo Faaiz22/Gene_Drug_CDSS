@@ -21,3 +21,6 @@ rdkit
 PyYAML
 httpx
 biopython
+captum
+sentencepiece
+protobuf
