@@ -49,7 +49,7 @@ def fetch_molecular_data_tool(
     Returns:
         Dictionary with 'smiles' and 'sequence' keys, or 'error' on failure
     """
-    from src.utils.api_clients import DataEnricher
+    from utils.api_clients import DataEnricher
     from src.core_processing import load_config
     
     try:
