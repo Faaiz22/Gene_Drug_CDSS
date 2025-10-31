@@ -1,24 +1,27 @@
-"""
-Enhanced Single Prediction Page with Agentic Analysis.
-"""
-
 import streamlit as st
-from pathlib import Path
 import sys
+from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SRC_PATH = PROJECT_ROOT / 'src'
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
 
-from src.agent.agent_orchestrator import DTIAgentOrchestrator
-# We no longer need load_config here, main.py handles it
-# from src.core_processing import load_config 
+# Import CDSS modules
+try:
+    from agent.agent_orchestrator import DTIAgentOrchestrator
+    from utils.exceptions import CDSSException
+except ImportError as e:
+    st.error(f"Failed to import required modules: {e}")
+    st.error("Please ensure all dependencies are installed and the system is properly initialized.")
+    st.stop()
 
 st.set_page_config(
     page_title="Single Prediction - Agentic CDSS",
     page_icon="🎯",
     layout="wide"
 )
-
 @st.cache_resource
 def get_agent():
     # --- Check if processor is loaded ---
