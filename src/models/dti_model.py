@@ -10,8 +10,8 @@ from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, ac
 import matplotlib.pyplot as plt
 import numpy as np
 
-from .egnn import EGNN
-from ..utils.exceptions import FeaturizationException, ModelException
+from models.egnn import EGNN
+from utils.exceptions import FeaturizationException, ModelException
 
 log = logging.getLogger(__name__)
 
