@@ -1,164 +1,162 @@
 """
-DTI Prediction Model: EGNN + ESM-2 + Cross-Attention
-
-This model implements the state-of-the-art architecture:
-1.  EGNN: Encodes the 3D drug conformer graph.
-2.  Protein Encoder: A simple MLP to project the ESM-2 embedding.
-3.  Cross-Attention: Fuses the 3D drug atom embeddings with the
-    protein embedding.
-4.  Prediction Head: Predicts the final interaction probability.
+E(n)-Equivariant Graph Neural Network (EGNN)
+Preserves rotational and translational symmetries in 3D space.
 """
 
 import torch
 import torch.nn as nn
-from torch_geometric.nn import global_mean_pool
+from torch_geometric.nn import MessagePassing
+from torch_geometric.utils import add_self_loops, degree
 
-# Import the EGNN implementation from your repository
-try:
-    from .egnn import EGNN
-except ImportError:
-    raise ImportError("Failed to import EGNN from .egnn. Make sure src/models/egnn.py exists.")
 
-class DTIPredictor(nn.Module):
-    def __init__(self, 
-                 protein_emb_dim: int, 
-                 drug_atom_feature_dim: int = 1, # Input dim for atoms (e.g., atomic num)
-                 egnn_hidden_dim: int = 128,
-                 egnn_layers: int = 4,
-                 cross_attn_heads: int = 4,
-                 dropout_rate: float = 0.1):
-        """
-        Initializes the model layers.
+class EGNNLayer(MessagePassing):
+    """
+    Single E(n)-Equivariant Graph Neural Network Layer
+    """
+    def __init__(self, hidden_dim, edge_feat_dim=0):
+        super(EGNNLayer, self).__init__(aggr='add')
+        self.hidden_dim = hidden_dim
         
+        # Message MLP
+        self.message_mlp = nn.Sequential(
+            nn.Linear(2 * hidden_dim + edge_feat_dim + 1, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU()
+        )
+        
+        # Coordinate MLP
+        self.coord_mlp = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1)
+        )
+        
+        # Node update MLP
+        self.node_mlp = nn.Sequential(
+            nn.Linear(2 * hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim)
+        )
+        
+    def forward(self, h, pos, edge_index, edge_attr=None):
+        """
         Args:
-            protein_emb_dim: Dimension of the ESM-2 embedding (e.g., 320 for the 35M model).
-            drug_atom_feature_dim: Number of input features for each atom.
-            egnn_hidden_dim: Internal dimension for the EGNN and attention layers.
-            egnn_layers: Number of EGNN message passing layers.
-            cross_attn_heads: Number of heads for the cross-attention layer.
-            dropout_rate: Dropout for regularization.
-        """
-        super().__init__()
-        
-        # --- Drug Atom Embedding ---
-        # Convert atomic numbers (long) into dense vectors (float)
-        # We'll use a 100-dim embedding for atomic numbers 1-99
-        self.atom_embedding = nn.Embedding(100, egnn_hidden_dim)
-
-        # --- 3D Drug Encoder (EGNN) ---
-        # Takes in atomic embeddings (h) and positions (x)
-        self.egnn = EGNN(
-            in_node_nf=egnn_hidden_dim,
-            hidden_nf=egnn_hidden_dim,
-            out_node_nf=egnn_hidden_dim,
-            n_layers=egnn_layers,
-            attention=True,
-            normalize=True,
-            residual=True
-        )
-
-        # --- Protein Embedding Encoder ---
-        # Project ESM-2 embedding to the same hidden dimension
-        self.protein_projection = nn.Sequential(
-            nn.Linear(protein_emb_dim, egnn_hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate)
-        )
-
-        # --- Drug-Protein Interaction (Cross-Attention) ---
-        # The protein (context) will "attend" to each atom in the drug
-        self.cross_attention = nn.MultiheadAttention(
-            embed_dim=egnn_hidden_dim,
-            num_heads=cross_attn_heads,
-            dropout=dropout_rate,
-            batch_first=True # Expects (batch, seq, features)
-        )
-
-        # --- Final Prediction Head ---
-        # Takes the fused representation and predicts a single logit
-        self.prediction_head = nn.Sequential(
-            nn.Linear(egnn_hidden_dim * 2, egnn_hidden_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate),
-            nn.Linear(egnn_hidden_dim, 1) # Output a single logit for BCEWithLogitsLoss
-        )
-
-    def forward(self, data) -> torch.Tensor:
-        """
-        Forward pass of the model.
-        
-        Args:
-            data (torch_geometric.data.Batch): A batch of Data objects from
-                                               our FeatureEngineer.
+            h: Node features [num_nodes, hidden_dim]
+            pos: Node 3D coordinates [num_nodes, 3]
+            edge_index: Graph connectivity [2, num_edges]
+            edge_attr: Edge features [num_edges, edge_feat_dim] (optional)
         
         Returns:
-            torch.Tensor: A tensor of (batch_size, 1) logits.
+            h_out: Updated node features
+            pos_out: Updated coordinates
         """
+        # Add self-loops
+        edge_index, _ = add_self_loops(edge_index, num_nodes=h.size(0))
         
-        # --- 1. Process Drug ---
-        # data.x shape: (num_atoms_in_batch, 1) - Atomic numbers
-        # data.pos shape: (num_atoms_in_batch, 3) - XYZ coordinates
-        # data.edge_index shape: (2, num_bonds_in_batch)
-        # data.batch shape: (num_atoms_in_batch) - Maps atoms to graphs
+        # Message passing
+        h_out = self.propagate(edge_index, h=h, pos=pos, edge_attr=edge_attr)
         
-        # Get initial atom embeddings from atomic numbers
-        atom_embeds = self.atom_embedding(data.x.squeeze()) # (num_atoms, hidden_dim)
+        # Update coordinates
+        pos_out = pos + self.coord_update(h, pos, edge_index)
+        
+        # Update node features
+        h_out = h + self.node_mlp(torch.cat([h, h_out], dim=-1))
+        
+        return h_out, pos_out
+    
+    def message(self, h_i, h_j, pos_i, pos_j, edge_attr):
+        """
+        Construct messages for each edge
+        """
+        # Compute distance
+        rel_pos = pos_i - pos_j
+        dist = torch.norm(rel_pos, dim=-1, keepdim=True)
+        
+        # Concatenate features
+        if edge_attr is not None:
+            msg_input = torch.cat([h_i, h_j, dist, edge_attr], dim=-1)
+        else:
+            msg_input = torch.cat([h_i, h_j, dist], dim=-1)
+        
+        # Compute message
+        msg = self.message_mlp(msg_input)
+        
+        return msg
+    
+    def coord_update(self, h, pos, edge_index):
+        """
+        Update coordinates in an equivariant manner
+        """
+        row, col = edge_index
+        rel_pos = pos[row] - pos[col]
+        dist = torch.norm(rel_pos, dim=-1, keepdim=True)
+        
+        # Compute coordinate weights
+        coord_weights = self.coord_mlp(h[row])
+        
+        # Normalize relative positions
+        rel_pos_normalized = rel_pos / (dist + 1e-8)
+        
+        # Weighted update
+        coord_diff = coord_weights * rel_pos_normalized
+        
+        # Aggregate
+        coord_update = torch.zeros_like(pos)
+        coord_update.index_add_(0, col, coord_diff)
+        
+        return coord_update
 
-        # Pass atom embeddings (h) and positions (x) through EGNN
-        # h_out shape: (num_atoms, hidden_dim)
-        h_out, _ = self.egnn(
-            h=atom_embeds, 
-            x=data.pos, 
-            edges=data.edge_index, 
-            node_mask=None, # Assuming all nodes are real
-            edge_mask=None
+
+class EGNN(nn.Module):
+    """
+    Multi-layer E(n)-Equivariant Graph Neural Network
+    """
+    def __init__(self, in_dim, hidden_dim, out_dim, n_layers=4, edge_feat_dim=0):
+        super(EGNN, self).__init__()
+        
+        self.in_dim = in_dim
+        self.hidden_dim = hidden_dim
+        self.out_dim = out_dim
+        self.n_layers = n_layers
+        
+        # Input projection
+        self.node_embedding = nn.Linear(in_dim, hidden_dim)
+        
+        # EGNN layers
+        self.layers = nn.ModuleList([
+            EGNNLayer(hidden_dim, edge_feat_dim) 
+            for _ in range(n_layers)
+        ])
+        
+        # Output projection
+        self.output_layer = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, out_dim)
         )
-
-        # --- 2. Process Protein ---
-        # data.protein_embedding shape: (batch_size, protein_emb_dim)
-        protein_embed = self.protein_projection(data.protein_embedding)
-        # protein_embed shape: (batch_size, hidden_dim)
         
-        # --- 3. Fuse with Cross-Attention ---
-        # We want the protein to be the "context" for the drug atoms.
+    def forward(self, h, pos, edge_index, edge_attr=None, batch=None):
+        """
+        Args:
+            h: Node features [num_nodes, in_dim]
+            pos: Node 3D coordinates [num_nodes, 3]
+            edge_index: Graph connectivity [2, num_edges]
+            edge_attr: Edge features [num_edges, edge_feat_dim] (optional)
+            batch: Batch assignment [num_nodes] (optional)
         
-        # We need to map the batch-level protein embedding to the atom-level.
-        # We "broadcast" the protein embedding to each atom in its respective graph.
-        # protein_embed_per_atom shape: (num_atoms, hidden_dim)
-        protein_embed_per_atom = protein_embed[data.batch] 
-
-        # Attention!
-        # Query: Drug atom embeddings
-        # Key: Protein context
-        # Value: Protein context
-        # We use unsqueeze(1) to add a "sequence length" dimension of 1
+        Returns:
+            node_features: Final node embeddings [num_nodes, out_dim]
+            final_pos: Final coordinates [num_nodes, 3]
+        """
+        # Project input features
+        h = self.node_embedding(h)
         
-        # attn_input shape: (num_atoms, 1, hidden_dim)
-        attn_input = h_out.unsqueeze(1)
+        # Apply EGNN layers
+        for layer in self.layers:
+            h, pos = layer(h, pos, edge_index, edge_attr)
         
-        # context shape: (num_atoms, 1, hidden_dim)
-        context = protein_embed_per_atom.unsqueeze(1)
-
-        # attn_out shape: (num_atoms, 1, hidden_dim)
-        attn_out, _ = self.cross_attention(
-            query=attn_input,
-            key=context,
-            value=context
-        )
+        # Output projection
+        node_features = self.output_layer(h)
         
-        # Fused atom representations
-        # We add the attention output to the original atom embedding (residual)
-        fused_atom_embeds = h_out + attn_out.squeeze(1) # (num_atoms, hidden_dim)
-
-        # --- 4. Pool and Predict ---
-        
-        # Pool all atom embeddings in each graph to get a single graph vector
-        drug_vector = global_mean_pool(fused_atom_embeds, data.batch) # (batch_size, hidden_dim)
-        
-        # Concatenate the final drug vector and the protein vector
-        combined_vector = torch.cat([drug_vector, protein_embed], dim=1) # (batch_size, hidden_dim * 2)
-        
-        # Get final prediction
-        logit = self.prediction_head(combined_vector) # (batch_size, 1)
-        
-        return logit
+        return node_features, pos
