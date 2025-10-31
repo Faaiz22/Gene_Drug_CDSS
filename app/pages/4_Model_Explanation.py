@@ -2,12 +2,34 @@ import streamlit as st
 import matplotlib.pyplot as plt
 import sys
 from pathlib import Path
+"""
+Enhanced Single Prediction Page with Agentic Analysis.
+"""
 
-# ----- Path Setup -----
-SRC_PATH = str(Path(__file__).resolve().parents[2] / 'src')
-if SRC_PATH not in sys.path:
-    sys.path.append(SRC_PATH)
+import streamlit as st
+import sys
+from pathlib import Path
 
+# Add project root to path (same pattern as main.py)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+SRC_PATH = PROJECT_ROOT / 'src'
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+# NOW import CDSS modules (using absolute imports)
+try:
+    from agent.agent_orchestrator import DTIAgentOrchestrator
+    from utils.exceptions import CDSSException
+except ImportError as e:
+    st.error(f"Failed to import required modules: {e}")
+    st.error("Please ensure all dependencies are installed and the system is properly initialized.")
+    st.stop()
+
+st.set_page_config(
+    page_title="Model Explanation - Agentic CDSS",
+    page_icon="🎯",
+    layout="wide"
+)
 # ----- Import Explainer and CoreProcessor -----
 try:
     from src.models.explainer import ModelExplainer
