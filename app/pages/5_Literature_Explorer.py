@@ -12,17 +12,15 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
-# Add project root to path (same pattern as main.py)
+# Add project root to path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 SRC_PATH = PROJECT_ROOT / 'src'
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
-# Absolute imports 
-from utils.module_name import ClassName
-from core_processing import CoreProcessor
-# NOW import CDSS modules (using absolute imports)
+
+# Import CDSS modules
 try:
-    from agent.agent_orchestrator import DTIAgentOrchestrator
+    from utils.pubmed_client import PubMedClient
     from utils.exceptions import CDSSException
 except ImportError as e:
     st.error(f"Failed to import required modules: {e}")
@@ -30,20 +28,23 @@ except ImportError as e:
     st.stop()
 
 st.set_page_config(
-    page_title="Literature explorer - Agentic CDSS",
-    page_icon="🎯",
+    page_title="Literature Explorer",
+    page_icon="📚",
     layout="wide"
 )
 
-# Check for processor first
+# Check for processor
 if "core_processor" not in st.session_state:
-    st.error("Core processor not loaded. Please go to the 'CDSS Diagnostics' page, enter credentials, and click 'Load Processor'.")
+    st.error(
+        "⚠️ **Core processor not initialized**\n\n"
+        "Please go to the main page, enter your API credentials, "
+        "and click 'Initialize System' before using the literature explorer."
+    )
     st.stop()
-    
-# Initialize cached resources
+
+# Initialize cached PubMed client
 @st.cache_resource
 def get_pubmed_client():
-    # Config is loaded by main.py and stored in session_state
     config = st.session_state.config
     return PubMedClient(config)
 
@@ -103,8 +104,8 @@ with st.sidebar:
 
 # Main content area
 tab1, tab2, tab3, tab4 = st.tabs([
-    "🔍 Search", 
-    "📊 Trends Analysis", 
+    "🔍 Search",
+    "📊 Trends Analysis",
     "🌐 Citation Network",
     "📝 Report Generator"
 ])
@@ -113,15 +114,14 @@ tab1, tab2, tab3, tab4 = st.tabs([
 with tab1:
     st.header("Search PubMed")
     
-    # --- FIX ---
-    # Initialize search_query to None to prevent NameError
-    search_query = None 
-    
     search_mode = st.radio(
         "Search Mode",
         ["Drug-Gene Pair", "Custom Query", "Gene-Centric", "Drug-Centric"],
         horizontal=True
     )
+    
+    # Initialize search_query variable
+    search_query = None
     
     if search_mode == "Drug-Gene Pair":
         col1, col2 = st.columns(2)
@@ -146,10 +146,9 @@ with tab1:
             help="Narrow search to specific interaction types"
         )
         
-        # search_query = None # <-- This was the old position, moved up
         if st.button("🔍 Search Literature", type="primary", use_container_width=True):
             if drug_name and gene_name:
-                search_query = (drug_name, gene_name, 
+                search_query = (drug_name, gene_name,
                               None if interaction_type == "Any" else interaction_type.lower())
     
     elif search_mode == "Custom Query":
@@ -192,6 +191,7 @@ with tab1:
             try:
                 client = get_pubmed_client()
                 
+                # Perform search based on mode
                 if search_mode == "Drug-Gene Pair":
                     papers = asyncio.run(client.search_interactions(
                         gene_name=search_query[1],
@@ -199,10 +199,18 @@ with tab1:
                         max_results=max_results,
                         interaction_type=search_query[2]
                     ))
-                else:
-                    # Implement custom search logic
-                    st.warning("Custom query, gene-centric, and drug-centric searches are not fully implemented in this demo.")
+                elif search_mode == "Custom Query":
+                    # For custom query, we'd need a different method
+                    st.warning("Custom query search not fully implemented in this version.")
                     papers = []
+                else:
+                    # For gene-centric or drug-centric
+                    papers = asyncio.run(client.search_interactions(
+                        gene_name=search_query[1] if search_query[1] else "",
+                        drug_name=search_query[0] if search_query[0] else "",
+                        max_results=max_results,
+                        interaction_type=search_query[2]
+                    ))
                 
                 if papers:
                     st.success(f"✅ Found {len(papers)} relevant papers")
@@ -252,7 +260,6 @@ with tab1:
                                 if st.button(f"💾 Save to Report", key=f"save_{i}"):
                                     if 'saved_papers' not in st.session_state:
                                         st.session_state.saved_papers = []
-                                    # Avoid duplicates
                                     if not any(p['pmid'] == paper['pmid'] for p in st.session_state.saved_papers):
                                         st.session_state.saved_papers.append(paper)
                                         st.success("Added to report!")
@@ -285,8 +292,6 @@ with tab1:
                 st.error(f"Search failed: {str(e)}")
                 st.exception(e)
 
-# --- (Rest of the file is unchanged) ---
-
 # ===== TAB 2: TRENDS ANALYSIS =====
 with tab2:
     st.header("📊 Research Trends Analysis")
@@ -312,7 +317,6 @@ with tab2:
             st.plotly_chart(fig_timeline, use_container_width=True)
         else:
             st.info("No publication year data available for timeline chart.")
-
         
         # Journal distribution
         st.subheader("Top Publishing Journals")
@@ -321,7 +325,7 @@ with tab2:
         if journal_data:
             journal_counts = pd.Series(journal_data).value_counts().reset_index(name='Count').head(10)
             journal_counts.columns = ['Journal', 'Count']
-
+            
             fig_journals = px.bar(
                 journal_counts.sort_values('Count', ascending=True),
                 x='Count',
@@ -332,14 +336,13 @@ with tab2:
             st.plotly_chart(fig_journals, use_container_width=True)
         else:
             st.info("No journal data available.")
-
         
-        # Author network (simplified)
+        # Author network
         st.subheader("Collaborative Network")
         
         all_authors = []
         for p in papers:
-            all_authors.extend(p['authors'][:3])  # Top 3 authors per paper
+            all_authors.extend(p['authors'][:3])
         
         if all_authors:
             author_counts = pd.Series(all_authors).value_counts().head(15)
@@ -355,7 +358,6 @@ with tab2:
             st.plotly_chart(fig_authors, use_container_width=True)
         else:
             st.info("No author data available.")
-
         
         # Research growth metrics
         col1, col2, col3 = st.columns(3)
@@ -370,7 +372,6 @@ with tab2:
                 st.metric("Avg. Publication Year", f"{avg_year:.1f}")
             else:
                 st.metric("Avg. Publication Year", "N/A")
-
         
         with col3:
             unique_journals = len(set(p['journal'] for p in papers if p['journal']))
@@ -386,7 +387,6 @@ with tab3:
     if 'papers' in st.session_state and st.session_state.papers:
         st.info("🚧 Citation network analysis coming soon! This will show connections between papers and co-citation patterns.")
         
-        # Placeholder visualization
         st.markdown("""
         **Planned Features:**
         - Interactive citation graph
@@ -444,7 +444,7 @@ with tab4:
                 report_years = [int(p['year']) for p in saved_papers if p['year'].isdigit()]
                 report += f"This literature review encompasses {len(saved_papers)} peer-reviewed publications "
                 if report_years:
-                     report += f"spanning from {min(report_years)} to {max(report_years)}. "
+                    report += f"spanning from {min(report_years)} to {max(report_years)}. "
                 
                 unique_journals = len(set(p['journal'] for p in saved_papers if p['journal']))
                 report += f"The papers were published across {unique_journals} different journals.\n\n"
@@ -468,7 +468,7 @@ with tab4:
                 report += "## References\n\n"
                 client = get_pubmed_client()
                 for i, paper in enumerate(saved_papers, 1):
-                    citation = client.format_citation(paper) # Assuming APA style for now
+                    citation = client.format_citation(paper)
                     report += f"{i}. {citation}\n\n"
                 
                 # Display and download
