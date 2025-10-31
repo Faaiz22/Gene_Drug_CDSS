@@ -1,126 +1,161 @@
 """
-Feature Engineer for 3D Drug-Protein Interaction
-
-This module performs the state-of-the-art featurization:
-1.  Drug: Converts SMILES to a 3D graph with atomic coordinates (for EGNN).
-2.  Protein: Converts amino acid sequence to a high-dimensional embedding
-    using the ESM-2 Protein Language Model.
+Feature Engineering for Drug-Target Interaction Prediction
+Handles 3D molecular conformer generation and protein sequence embedding
 """
 
 import torch
-from torch_geometric.data import Data
+import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from transformers import EsmModel, EsmTokenizer
-import logging
+from torch_geometric.data import Data
+from transformers import EsmTokenizer, EsmModel
 
-# Set up logging
-logger = logging.getLogger(__name__)
 
 class FeatureEngineer:
-    def __init__(self, config):
+    """
+    Featurizes drug SMILES and protein sequences for DTI prediction
+    """
+    
+    def __init__(self, config=None, device=None):
         """
-        Initializes the featurizer, loading the ESM-2 model.
-        """
-        self.config = config
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        Initialize FeatureEngineer
         
-        # Load ESM-2 Model and Tokenizer
-        # Using a smaller ESM-2 model for faster inference.
-        # For SOTA results, 'facebook/esm2_t33_650M_UR50D' is common.
-        esm_model_name = self.config.get('esm_model', 'facebook/esm2_t12_35M_UR50D')
+        Args:
+            config: Configuration dictionary (optional)
+            device: torch device (optional, defaults to 'cpu')
+        """
+        self.config = config or {}
+        self.device = device or torch.device('cpu')
         
-        logger.info(f"Loading ESM-2 model: {esm_model_name}...")
-        try:
-            self.esm_tokenizer = EsmTokenizer.from_pretrained(esm_model_name)
-            self.esm_model = EsmModel.from_pretrained(esm_model_name).to(self.device)
-            self.esm_model.eval()  # Set to evaluation mode
-            logger.info("ESM-2 model loaded successfully.")
-        except Exception as e:
-            logger.error(f"Failed to load ESM-2 model: {e}")
-            raise
-
-    def _get_drug_graph(self, smiles_string: str) -> Data:
+        # Load ESM-2 protein language model
+        print("Loading ESM-2 model...")
+        self.tokenizer = EsmTokenizer.from_pretrained("facebook/esm2_t33_650M_UR50D")
+        self.protein_model = EsmModel.from_pretrained("facebook/esm2_t33_650M_UR50D")
+        self.protein_model.to(self.device)
+        self.protein_model.eval()
+        print("ESM-2 model loaded successfully.")
+        
+    def smiles_to_graph(self, smiles):
         """
-        Converts a SMILES string into a 3D graph (Data object).
-        Generates 3D conformer and extracts atomic features and coordinates.
+        Convert SMILES to 3D molecular graph
+        
+        Args:
+            smiles: SMILES string
+            
+        Returns:
+            node_features: [num_atoms, 9]
+            edge_index: [2, num_bonds]
+            pos: [num_atoms, 3]
         """
-        mol = Chem.MolFromSmiles(smiles_string)
+        # Parse SMILES
+        mol = Chem.MolFromSmiles(smiles)
         if mol is None:
-            raise ValueError(f"RDKit failed to parse SMILES: {smiles_string}")
-
+            raise ValueError(f"Invalid SMILES: {smiles}")
+        
+        # Add hydrogens
         mol = Chem.AddHs(mol)
         
         # Generate 3D conformer
-        status = AllChem.EmbedMolecule(mol, AllChem.ETKDGv3())
-        if status == -1:
-            logger.warning(f"Could not generate 3D conformer for {smiles_string}. Trying with random coords.")
-            status = AllChem.EmbedMolecule(mol, AllChem.ETKDGv3(useRandomCoords=True))
-            if status == -1:
-                 raise ValueError(f"Failed to generate 3D conformer even with random coords for {smiles_string}")
-        
         try:
+            AllChem.EmbedMolecule(mol, randomSeed=42)
             AllChem.MMFFOptimizeMolecule(mol)
         except Exception as e:
-            logger.warning(f"MMFF optimization failed for {smiles_string}: {e}. Using unoptimized conformer.")
-
-        conformer = mol.GetConformer()
-        positions = torch.tensor(conformer.GetPositions(), dtype=torch.float)
-
-        # Extract atomic features (e.g., atom type)
-        # This can be expanded (atomic_num, charge, is_aromatic, etc.)
-        atom_features = []
-        for atom in mol.GetAtoms():
-            atom_features.append(atom.GetAtomicNum())
+            raise ValueError(f"Failed to generate 3D conformer: {e}")
         
-        x = torch.tensor(atom_features, dtype=torch.long).view(-1, 1)
-
-        # Extract edge index (bonds)
+        # Get conformer
+        conf = mol.GetConformer()
+        
+        # Extract atom features
+        node_features = []
+        for atom in mol.GetAtoms():
+            features = [
+                atom.GetAtomicNum(),
+                atom.GetDegree(),
+                atom.GetFormalCharge(),
+                atom.GetHybridization().real,
+                atom.GetIsAromatic(),
+                atom.GetMass(),
+                atom.GetTotalValence(),
+                atom.GetNumRadicalElectrons(),
+                atom.IsInRing()
+            ]
+            node_features.append(features)
+        
+        node_features = torch.tensor(node_features, dtype=torch.float)
+        
+        # Extract 3D coordinates
+        pos = []
+        for i in range(mol.GetNumAtoms()):
+            position = conf.GetAtomPosition(i)
+            pos.append([position.x, position.y, position.z])
+        
+        pos = torch.tensor(pos, dtype=torch.float)
+        
+        # Extract edges
         edge_list = []
         for bond in mol.GetBonds():
             i = bond.GetBeginAtomIdx()
             j = bond.GetEndAtomIdx()
-            edge_list.extend([[i, j], [j, i]])
+            edge_list.append([i, j])
+            edge_list.append([j, i])  # Undirected graph
         
         edge_index = torch.tensor(edge_list, dtype=torch.long).t().contiguous()
         
-        # Create the PyG Data object
-        data = Data(x=x, edge_index=edge_index, pos=positions)
-        return data
-
-    @torch.no_grad()
-    def _get_protein_embedding(self, sequence: str) -> torch.Tensor:
+        return node_features, edge_index, pos
+    
+    def embed_protein(self, sequence):
         """
-        Converts an amino acid sequence into a fixed-size embedding
-        using the ESM-2 model.
-        """
-        # Truncate sequence if it's too long for the model (e.g., >1022 tokens)
-        if len(sequence) > 1022:
-            sequence = sequence[:1022]
+        Generate protein sequence embedding using ESM-2
+        
+        Args:
+            sequence: Protein sequence string
             
-        tokens = self.esm_tokenizer(sequence, return_tensors='pt', add_special_tokens=True).to(self.device)
-        output = self.esm_model(**tokens)
-        
-        # Use mean pooling of the last hidden state to get a single vector
-        # for the entire protein.
-        # We ignore <cls> and <eos> tokens (indices 0 and -1)
-        embedding = output.last_hidden_state[0, 1:-1].mean(dim=0)
-        return embedding.cpu()
-
-    def featurize(self, smiles: str, sequence: str) -> Data:
+        Returns:
+            embedding: [protein_embed_dim] tensor
         """
-        Main featurization function.
-        Combines the 3D drug graph and the ESM-2 protein embedding
-        into a single Data object.
+        # Tokenize
+        inputs = self.tokenizer(sequence, return_tensors="pt", padding=True, truncation=True, max_length=1024)
+        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        
+        # Generate embedding
+        with torch.no_grad():
+            outputs = self.protein_model(**inputs)
+            # Use mean of sequence tokens (excluding special tokens)
+            embedding = outputs.last_hidden_state[:, 1:-1, :].mean(dim=1).squeeze(0)
+        
+        return embedding
+    
+    def featurize(self, smiles, sequence, label):
         """
-        # 1. Get 3D drug graph
-        drug_data = self._get_drug_graph(smiles)
+        Featurize a drug-target pair
         
-        # 2. Get ESM-2 protein embedding
-        protein_embedding = self._get_protein_embedding(sequence)
-        
-        # 3. Store the protein embedding inside the drug's Data object
-        # This is a common PyG trick to keep pairs together in a batch
-        drug_data.protein_embedding = protein_embedding.unsqueeze(0) # Add batch dim
-        
-        return drug_data
+        Args:
+            smiles: Drug SMILES string
+            sequence: Protein sequence string
+            label: Interaction label (0 or 1)
+            
+        Returns:
+            data: torch_geometric.data.Data object
+        """
+        try:
+            # Process drug
+            node_features, edge_index, pos = self.smiles_to_graph(smiles)
+            
+            # Process protein
+            protein_embed = self.embed_protein(sequence)
+            
+            # Create PyG Data object
+            data = Data(
+                x=node_features,
+                edge_index=edge_index,
+                pos=pos,
+                protein_embed=protein_embed.unsqueeze(0),  # Add batch dimension
+                y=torch.tensor([label], dtype=torch.float)
+            )
+            
+            return data
+            
+        except Exception as e:
+            # Return None for failed featurizations
+            print(f"Featurization failed: {e}")
+            return None
