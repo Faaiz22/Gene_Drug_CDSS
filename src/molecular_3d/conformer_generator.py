@@ -5,7 +5,7 @@ import torch
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from torch_geometric.data import Data
-from ..utils.exceptions import FeaturizationException
+from utils.exceptions import FeaturizationException
 
 # Set up a logger for this module
 log = logging.getLogger(__name__)
